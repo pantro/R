@@ -1,0 +1,24 @@
+###########################################
+Autor: Gian Franco
+-----------------------------------------
+
+EXPLICACION DE CADA ARCHIVO EN ESTA CARPETA
+
+###########################################
+CODIGO: Realizado en RStudio
+  -"minsa_vs_participacion.R"
+
+CARPETA "BD":Se encuentran todas las bases utilizadas
+  -"IcicloASA_MINSA.csv" : Datos solo TRATADAS del primer ciclo de rociado del MINSA en ASA.
+  -"IIcicloASA_MINSA.csv" : Datos solo TRATADAS del segundo ciclo de rociado del MINSA en ASA.
+  -"no_rociadas_CRD_MINSA.csv" : Datos de las viviendas CERRADAS, RENUENTES, DESHABITADAS encontradas por el MINSA.
+  -"bd_estrategias.csv" : base de datos de todas las estrategias y viviendas de estudio.
+  -"merge_participacion.csv": Informacion total de viviendas realizadas en PARTICIPACION, ya sea en CUANTIS o SENSIS.
+
+CARPETA "RESULTADOS": Obtenidos al ejecutar el codigo
+  -"siM1t_noEt.csv" : Datos que estan en "MINSA primer rociado tratadas"pero no estan en "ESTRATEGIAS tratadas".
+  -"siEt_noM1t.csv" : Datos que estan en "ESTRATEGIAS tratadas" pero no estan en "MINSA primer rociado tratadas".
+  -"siM2t_noCt.csv" : Datos que estan en "MINSA segundo rociado tratadas"pero no estan en "CUANTIS tratadas".
+  -"siCt_noM2t.csv" : Datos que estan en "CUANTIS tratadas" pero no estan en "MINSA primer rociado tratadas".
+	
+
