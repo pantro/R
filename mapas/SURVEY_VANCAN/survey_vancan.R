@@ -7,7 +7,7 @@ library(viridis)
 
 PATH_DATA <- "~/Descargas/surveys_2025-09-23.csv"
 
-CLUSTER <- "cluster3"
+CLUSTER <- "cluster31"
 ANIO <- "2025"
 PATH_RESULT <- "~/Documentos/GITHUB/R/mapas/SURVEY_VANCAN/results/"
 
