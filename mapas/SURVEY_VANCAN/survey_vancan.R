@@ -4,10 +4,10 @@ library(leaflet)
 library(viridis)
 
 #PATH_DATA <- "~/Documentos/GITHUB/RabiesLabPeru/vax_rabies/data/precision_vaccination/surveys_V1_30jun24.csv" # cluster3 y cluster 15
+PATH_DATA <- "~/Descargas/surveys_2025-09-23.csv" # fase 2
+#PATH_DATA <- "~/Descargas/surveys_fase3_vancan_2025.csv" # fase 3
 
-PATH_DATA <- "~/Descargas/surveys_2025-09-23.csv"
-
-CLUSTER <- "cluster31"
+CLUSTER <- "cluster30"
 ANIO <- "2025"
 PATH_RESULT <- "~/Documentos/GITHUB/R/mapas/SURVEY_VANCAN/results/"
 
