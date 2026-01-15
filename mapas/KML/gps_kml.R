@@ -46,45 +46,114 @@ process_kml <- function(kml_path) {
   return(df) # Return the processed DataFrame
 }
 
-kml_dir <- "/home/pantro/Descargas/GPS VANCAN 2022 JLByR/"
+#kml_dir <- "/home/pantro/Descargas/GPS VANCAN 2022 JLByR/"
+
+#kml_files <- c(
+  #"GPS 01  02-07-2022  GRUPO 21.kml",
+  #"GPS 01  03-07-2022  GRUPO 12.kml",
+  #"GPS 01  26-06-2022  GRUPO 30.kml",
+  #"GPS 03  02-07-2022  GRUPO 27.kml",
+  #"GPS 03  03-07-2022  GRUPO 20.kml",
+  #"GPS 03  26-06-2022  GRUPO 27.kml",
+  #"GPS 04  02-07-2022  GRUPO 22.kml",
+  #"GPS 04  03-07-2022  GRUPO 13 .kml",
+  #"GPS 04  26-06-2022  GRUPO 10.kml",
+  #"GPS 12  02-07-2022  GRUPO 12.kml",
+  #"GPS 12  03-07-2022  GRUPO 15.kml",
+  #"GPS 12  26-06-2022  GRUPO 04.kml",
+#  "GPS 13  02-07-2022  GRUPO 09.kml",
+  #"GPS 13  03-07-2022  GRUPO SN.kml",
+  #"GPS 14  02-07-2022  GRUPO 13.kml",
+  #"GPS 14  03-07-2022  GRUPO 03.kml",
+#  "GPS 14  26-06-2022  GRUPO 09.kml"
+  #"GPS 15  02-07-2022  GRUPO 24.kml",
+  #"GPS 15  26-06-2022  GRUPO 04.kml",
+  #"GPS 16  02-07-2022  GRUPO 23.kml",
+  #"GPS 16  26-06-2022  GRUPO 21.kml",
+  #"GPS 17  26-06-2022  GRUPO 20.kml",
+  #"GPS 18  02-07-2022  GRUPO 03.kml",
+  #"GPS 18  03-07-2022  GRUPO 01 .kml",
+  #"GPS 18  26-06-2022  GRUPO 18.kml",
+  #"GPS 19  02-07-2022  GRUPO 04.kml",
+  #"GPS 19  26-06-2022  GRUPO 25.kml",
+  #"GPS 20  02-07-2022  GRUPO 01.kml",
+  #"GPS 20  03-07-2022  GRUPO 16.kml",
+  #"GPS 20  26-06-2022  GRUPO 23.kml"
+#)
+
+kml_dir <- "/home/pantro/Descargas/GPS VANCAN 2023 ASA/"
 
 kml_files <- c(
-  "GPS 01  02-07-2022  GRUPO 21.kml",
-  "GPS 01  03-07-2022  GRUPO 12.kml",
-  "GPS 01  26-06-2022  GRUPO 30.kml",
-  "GPS 03  02-07-2022  GRUPO 27.kml",
-  "GPS 03  03-07-2022  GRUPO 20.kml",
-  "GPS 03  26-06-2022  GRUPO 27.kml",
-  "GPS 04  02-07-2022  GRUPO 22.kml",
-  "GPS 04  03-07-2022  GRUPO 13 .kml",
-  "GPS 04  26-06-2022  GRUPO 10.kml",
-  "GPS 12  02-07-2022  GRUPO 12.kml",
-  "GPS 12  03-07-2022  GRUPO 15.kml",
-  "GPS 12  26-06-2022  GRUPO 04.kml",
-  "GPS 13  02-07-2022  GRUPO 09.kml",
-  "GPS 13  03-07-2022  GRUPO SN.kml",
-  "GPS 14  02-07-2022  GRUPO 13.kml",
-  "GPS 14  03-07-2022  GRUPO 03.kml",
-  "GPS 14  26-06-2022  GRUPO 09.kml",
-  "GPS 15  02-07-2022  GRUPO 24.kml",
-  "GPS 15  26-06-2022  GRUPO 04.kml",
-  "GPS 16  02-07-2022  GRUPO 23.kml",
-  "GPS 16  26-06-2022  GRUPO 21.kml",
-  "GPS 17  26-06-2022  GRUPO 20.kml",
-  "GPS 18  02-07-2022  GRUPO 03.kml",
-  "GPS 18  03-07-2022  GRUPO 01 .kml",
-  "GPS 18  26-06-2022  GRUPO 18.kml",
-  "GPS 19  02-07-2022  GRUPO 04.kml",
-  "GPS 19  26-06-2022  GRUPO 25.kml",
-  "GPS 20  02-07-2022  GRUPO 01.kml",
-  "GPS 20  03-07-2022  GRUPO 16.kml",
-  "GPS 20  26-06-2022  GRUPO 23.kml"
+  #"GPS-12  08-07-2023  GRUPO 24 .kml",
+  #"GPS-12  09-07-2023  GRUPO 25.kml",
+  #"GPS-12  15-07-2023  GRUPO 02.kml",
+  #"GPS-13  08-07-2023  GRUPO 20.kml",
+  "GPS-13  09-07-2023  GRUPO 22.kml",
+  "GPS-13  15-07-2023  GRUPO 22.kml",
+  #"GPS-13  16-07-2023  GRUPO 21.kml",
+  #"GPS-14  09-07-2023  GRUPO 23.kml",
+  #"GPS-14  15-07-2023  GRUPO 20.kml",
+  #"GPS-14  22-07-2023  GRUPO 22.kml",
+  #"GPS-18  08-07-2023  GRUPO 19.kml",
+  #"GPS-18  09-07-2023  GRUPO 24.kml",
+  #"GPS-18  15-07-2023  GRUPO 21.kml",
+  "GPS-18  16-07-2023  GRUPO 22.kml"
+  #"GPS-18  22-07-2023  GRUPO 25.kml",
+  #"GPS-18  23-07-2023  GRUPO 14.kml",
+  #"GPS-20  08-07-2023  GRUPO 18.kml",
+  #"GPS-20  09-07-2023  GRUPO 21.kml",
+  #"GPS-20  15-07-2023  GRUPO 12.kml",
+  #"GPS-20  22-07-2023  GRUPO 24.kml"
 )
 
 kml_paths <- file.path(kml_dir, kml_files)
 
 m <- leaflet() %>%
   addProviderTiles(providers$CartoDB.Positron)
+
+########
+# Adicionar cuadras de la ciudad
+#-----------------------------
+pol_raw <- read.csv(
+  "~/Descargas/Mz_ASA_08mar2024.csv",
+  sep = ";",
+  stringsAsFactors = FALSE
+)
+
+# Detectar inicio de polígono (lat y long vacíos)
+pol_raw <- pol_raw %>%
+  mutate(
+    is_start = is.na(lat) | lat == ""
+  )
+
+# Crear ID interno acumulado
+pol_raw <- pol_raw %>%
+  mutate(poly_id = cumsum(is_start))
+
+pol_vertices <- pol_raw %>%
+  filter(!is_start) %>%
+  mutate(
+    lat = as.numeric(lat),
+    long = as.numeric(long)
+  )
+
+pol_sf <- pol_vertices %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
+  group_by(ident, poly_id) %>%
+  summarise(
+    geometry = st_cast(st_combine(geometry), "POLYGON"),
+    .groups = "drop"
+  )
+m <- m %>%
+  addPolygons(
+    data = pol_sf,
+    group = "Polígonos CSV",
+    fillColor = "gray",
+    fillOpacity = 0.25,
+    color = "gray",
+    weight = 1
+  )
+#------------- FIN ADICIONAR POLIGONOS---------------
 
 for (i in seq_along(kml_paths)) {
   
@@ -224,10 +293,12 @@ m <- m %>%
     ',
     position = "bottomright"
   )
+m
 
 # Guardar como HTML
 htmlwidgets::saveWidget(
   m,
-  "~/Documentos/GITHUB/R/mapas/KML/2022/ruta_gps_JBYR.html",
+  #"~/Documentos/GITHUB/R/mapas/KML/2022/ruta_gps_JBYR_CGC.html",
+  "~/Documentos/GITHUB/R/mapas/KML/2023/ruta_gps_ASA_CGC.html",
   selfcontained = TRUE
 )
