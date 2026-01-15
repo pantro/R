@@ -7,7 +7,7 @@ library(viridis)
 PATH_DATA <- "~/Descargas/surveys_2025-09-23.csv" # fase 2
 #PATH_DATA <- "~/Descargas/surveys_fase3_vancan_2025.csv" # fase 3
 
-CLUSTER <- "cluster30"
+CLUSTER <- "cluster3"
 ANIO <- "2025"
 PATH_RESULT <- "~/Documentos/GITHUB/R/mapas/SURVEY_VANCAN/results/"
 
@@ -43,6 +43,51 @@ pal_global <- colorNumeric(
 
 m <- leaflet() %>%
   addProviderTiles(providers$CartoDB.Positron)
+
+########
+# Adicionar cuadras de la ciudad
+#-----------------------------
+pol_raw <- read.csv(
+  "~/Descargas/Mz_JLByR_08mar2024.csv",
+  sep = ";",
+  stringsAsFactors = FALSE
+)
+
+# Detectar inicio de polígono (lat y long vacíos)
+pol_raw <- pol_raw %>%
+  mutate(
+    is_start = is.na(lat) | lat == ""
+  )
+
+# Crear ID interno acumulado
+pol_raw <- pol_raw %>%
+  mutate(poly_id = cumsum(is_start))
+
+pol_vertices <- pol_raw %>%
+  filter(!is_start) %>%
+  mutate(
+    lat = as.numeric(lat),
+    long = as.numeric(long)
+  )
+
+pol_sf <- pol_vertices %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
+  group_by(ident, poly_id) %>%
+  summarise(
+    geometry = st_cast(st_combine(geometry), "POLYGON"),
+    .groups = "drop"
+  )
+m <- m %>%
+  addPolygons(
+    data = pol_sf,
+    group = "Polígonos CSV",
+    fillColor = "gray",
+    fillOpacity = 0.25,
+    color = "gray",
+    weight = 1
+  )
+#------------- FIN ADICIONAR POLIGONOS---------------
+
 # =========================
 # loop por usuario
 # =========================
@@ -81,6 +126,16 @@ for (u in users) {
       )
   }
   
+  # color de puntos:
+  # rojo si NUMBER_DOG_VACCINATED_2024 > 0
+  # caso contrario: color temporal original
+  point_colors <- ifelse(
+    !is.na(df_user$NUMBER_DOG_VACCINATED_2024) &
+      df_user$NUMBER_DOG_VACCINATED_2024 > 0,
+    "red",
+    pal_global(df_user$t_norm)
+  )
+  
   # puntos (misma paleta que la ruta)
   m <- m %>%
     addCircleMarkers(
@@ -89,7 +144,7 @@ for (u in users) {
       radius = 5,
       stroke = FALSE,
       fillOpacity = 0.9,
-      color = pal_global(df_user$t_norm),
+      color = point_colors,
       group = u
     )
 }
@@ -145,7 +200,7 @@ m <- m %>%
 m
 
 # Guardar como HTML
-NAME_RESULT <- paste0(PATH_RESULT, ANIO, "/ruta-flutter-", CLUSTER,".html")
+NAME_RESULT <- paste0(PATH_RESULT, ANIO, "/ruta-flutter-", CLUSTER,"-viviendasvacunadas.html")
 htmlwidgets::saveWidget(
   m,
   NAME_RESULT,
