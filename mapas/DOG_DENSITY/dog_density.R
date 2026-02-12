@@ -260,7 +260,7 @@ info_panel <- paste0(
    Total de cuadras: <b>", total_cuadras, "</b><br>
    Cuadras en muestra: <b>", cuadras_muestra, "</b><br><br>
    
-   <b>Densidad perros por cuadra (muestra)</b><br>
+   <b>Densidad perros por km2</b><br>
    Fórmula: Perros / Cuadras = ", total_perros_muestra, " / ", cuadras_muestra, "<br>
    Resultado: <b>", round(densidad_perros_cuadra, 3), "</b>
    
@@ -303,3 +303,142 @@ leaflet() %>%
     html = info_panel,
     position = "bottomright"
   )
+
+#==============================================================================
+#           ----            PERROS DEAMBULANTES        ---------------
+#=============================================================================
+# Obligar a las columnas necesarias a ser numericas
+survey <- survey %>%
+  mutate(across(
+    c(vive_calle, casa_calle, salen_solos_calle, can_escape, vive_casa, total_can),
+    ~as.numeric(.)
+  ))
+
+# Crear variable de perros deambulantes
+survey <- survey %>%
+  mutate(
+    perros_deambulantes =
+      rowSums(across(
+        c(vive_calle, casa_calle, salen_solos_calle, can_escape)
+      ), na.rm = TRUE)
+  )
+
+# Verificar la consistencia de los datos de esas columnas
+survey <- survey %>%
+  mutate(
+    check_total =
+      perros_deambulantes + vive_casa
+  )
+survey %>%
+  filter(!is.na(total_can) & check_total != total_can)
+
+# Ahora agregamos el poligono de la cuadra
+deamb_mz <- survey %>%
+  group_by(unicode_mz) %>%
+  summarise(
+    total_deamb = sum(perros_deambulantes, na.rm = TRUE),
+    total_encuestas = n(),
+    .groups = "drop"
+  )
+
+# Unir con tu la variable "mapa_final"
+mapa_deamb <- mapa_final %>%
+  left_join(deamb_mz, by = c("ident" = "unicode_mz"))
+
+# Variables para poner en el cuadro de texto en el mapa
+# Total de cuadras del cluster
+total_cuadras <- nrow(mapa_final)
+# Cuadras con muestra (donde hubo encuesta válida)
+cuadras_muestra <- nrow(deamb_mz)
+# Total de perros deambulantes en la muestra
+total_deamb_muestra <- sum(deamb_mz$total_deamb, na.rm = TRUE)
+# Densidad de perros deambulantes por cuadra (muestra)
+densidad_deamb_cuadra <- total_deamb_muestra / cuadras_muestra
+# Densidad relativa respecto al total de perros
+total_perros_muestra <- sum(survey$total_can, na.rm = TRUE)
+proporcion_deamb <- total_deamb_muestra / total_perros_muestra
+
+# Panel informativo
+info_panel_deamb <- paste0(
+  "<div style='background:white; padding:10px; border-radius:8px;
+   box-shadow:0 0 10px rgba(0,0,0,0.2); font-size:14px;'>
+   
+   <b>Perros deambulantes - Resumen Cluster</b><br><br>
+   
+   Total de cuadras: <b>", total_cuadras, "</b><br>
+   Cuadras con muestra: <b>", cuadras_muestra, "</b><br><br>
+   
+   <b>Total perros deambulantes (muestra)</b>: ",
+  total_deamb_muestra, "<br><br>
+   
+   <b>Densidad por cuadra (muestra)</b><br>
+   Fórmula: Deambulantes / Cuadras<br>
+   = ", total_deamb_muestra, " / ", cuadras_muestra, "<br>
+   Resultado: <b>", round(densidad_deamb_cuadra, 3), "</b><br><br>
+   
+   <b>Proporción respecto al total de perros</b><br>
+   Fórmula: Deambulantes / Total perros<br>
+   = ", total_deamb_muestra, " / ", total_perros_muestra, "<br>
+   Resultado: <b>", round(proporcion_deamb, 3), "</b>
+   
+   </div>"
+)
+
+
+# Crear punto dentro de la cuadra
+centroides_deamb <- mapa_deamb %>%
+  filter(!is.na(total_deamb) & total_deamb > 0) %>%
+  st_point_on_surface()
+
+# Poner un radio al circulo que sea proporcional a la cantidad de perros
+centroides_deamb <- centroides_deamb %>%
+  mutate(
+    radius = scales::rescale(total_deamb, to = c(4, 20))
+  )
+
+# Crear el label que se muestra en cada circulo
+centroides_deamb <- centroides_deamb %>%
+  mutate(
+    label_html = paste0(
+      "<div style='font-size:13px;'>",
+      "<b>Block:</b> ", ident, "<br>",
+      "<b>Stray Dogs:</b> ", total_deamb,
+      "</div>"
+    )
+  )
+
+# Mapa de perros deambulantes
+leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  
+  addPolygons(
+    data = mapa_final,
+    fillColor = "gray85",
+    fillOpacity = 0.5,
+    color = "white",
+    weight = 0.5
+  ) %>%
+  
+  addCircleMarkers(
+    data = centroides_deamb,
+    radius = ~radius,
+    fillColor = "purple",
+    fillOpacity = 0.85,
+    color = "white",
+    weight = 1,
+    label = ~lapply(label_html, htmltools::HTML),
+    labelOptions = labelOptions(
+      direction = "auto",
+      style = list(
+        "background-color" = "white",
+        "border-radius" = "6px",
+        "padding" = "6px"
+      )
+    )
+  ) %>%
+
+  addControl(
+    html = info_panel_deamb,
+    position = "bottomright"
+  )
+

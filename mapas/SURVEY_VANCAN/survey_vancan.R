@@ -141,7 +141,7 @@ calc_covered_area <- function(df,
 PATH_DATA <- "~/Descargas/surveys_2025-09-23.csv" # fase 2
 #PATH_DATA <- "~/Descargas/surveys_fase3_vancan_2025.csv" # fase 3
 
-CLUSTER <- "cluster3"
+CLUSTER <- "cluster1"
 ANIO <- "2025"
 PATH_RESULT <- "~/Documentos/GITHUB/R/mapas/SURVEY_VANCAN/results/"
 
