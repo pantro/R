@@ -16,6 +16,12 @@ ANIO <- 2024
 PATH_DATA <- "~/Descargas/post_vancan_limpio.csv"
 PATH_MZ <- "/home/pantro/Descargas/Mz_Cluster-selected"
 
+PATH_MZ_CLUSTER <- "/home/pantro/Descargas/Mz_Cluster-selected/Cluster_01_Mz_16ene2026.csv"
+PATH_HOUSE_CLUSTER = "~/Descargas/Points_cluster-selected/Point_Cluster_01_08mar2024.csv"
+
+viviendas_cluster <- read.csv(PATH_HOUSE_CLUSTER, sep = ";")
+total_viviendas_cluster <- length(unique(viviendas_cluster$UNICODE))
+
 # Leer datos
 survey <- read.csv(PATH_DATA)
 
@@ -39,11 +45,12 @@ dogs_mz <- survey %>%
 dogs_mz$cluster <- NULL
 
 # Leer los poligonos de las manzanas
-files <- list.files(
-  PATH_MZ,
-  pattern = "\\.csv$",
-  full.names = TRUE
-)
+#files <- list.files(
+#  PATH_MZ,
+#  pattern = "\\.csv$",
+#  full.names = TRUE
+#)
+files <- PATH_MZ_CLUSTER
 
 # Funcion para detectar separador
 detect_delim <- function(file) {
@@ -207,6 +214,13 @@ union_mzgps_numdogs <- manzanas_sf %>%
     by = c("ident" = "unicode_mz")
   )
 
+## Cantidad de viviendas en la muestra
+# Viviendas en muestra
+total_viviendas_muestra <- union_mzgps_numdogs %>%
+  filter(!is.na(total_dogs)) %>%
+  summarise(total = sum(viviendas, na.rm = TRUE)) %>%
+  pull(total)
+
 # Crear categorias para el mapa
 mapa_final <- union_mzgps_numdogs %>%
   mutate(
@@ -240,6 +254,20 @@ centroides <- centroides %>%
       "</div>"
     )
   )
+
+## Crear poligono total del cluster
+# Corrige si hay poligonos que se chocan o si estan mal cerrados
+manzanas_sf <- manzanas_sf %>%
+  st_make_valid() %>%
+  st_transform(32719)
+# Polígono que cubre todo el cluster
+cluster_poly <- st_combine(manzanas_sf) %>%
+  st_union()
+# Calcular área en km2 (UTM 32719 como ya usas)
+area_cluster_km2 <- as.numeric(
+  st_area(st_transform(cluster_poly, 32719))
+) / 1e6
+
 # Total de cuadras del cluster
 total_cuadras <- nrow(union_mzgps_numdogs)
 
@@ -249,6 +277,24 @@ cuadras_muestra <- nrow(centroides)
 # Total de perros en la muestra
 total_perros_muestra <- sum(centroides$total_dogs, na.rm = TRUE)
 
+## Estimacion por regla de 3 simple
+# Estimación total perros en cluster (expansión por cuadras)
+perros_estimados_cuadras <-
+  (total_perros_muestra / cuadras_muestra) * total_cuadras
+# Densidad km2 usando expansión por cuadras
+densidad_km2_cuadras <-
+  perros_estimados_cuadras / area_cluster_km2
+
+## Regla de 3 para calcular la cantidad de perros por vivienda
+# Estimación total perros usando viviendas
+perros_estimados_viviendas <-
+  (total_perros_muestra / total_viviendas_muestra) *
+  total_viviendas_cluster
+# Densidad km2 usando expansión por viviendas
+densidad_km2_viviendas <-
+  perros_estimados_viviendas / area_cluster_km2
+
+
 # Densidad de perros por cuadra (usando muestra)
 densidad_perros_cuadra <- total_perros_muestra / cuadras_muestra
 
@@ -257,16 +303,22 @@ info_panel <- paste0(
   "<div style='background:white; padding:10px; border-radius:8px;
    box-shadow:0 0 10px rgba(0,0,0,0.2); font-size:14px;'>
    
-   Total de cuadras: <b>", total_cuadras, "</b><br>
-   Cuadras en muestra: <b>", cuadras_muestra, "</b><br><br>
+   Área del cluster (km²): <b>", round(area_cluster_km2, 3), "</b><br>
+   Total cuadras: <b>", total_cuadras, "</b><br>
+   Cuadras muestra: <b>", cuadras_muestra, "</b><br>
+   Total perros muestra: <b>", total_perros_muestra, "</b><br>
+   Total viviendas: <b>", total_viviendas_cluster, "</b><br><br>
    
-   <b>Densidad perros por km2</b><br>
-   Fórmula: Perros / Cuadras = ", total_perros_muestra, " / ", cuadras_muestra, "<br>
-   Resultado: <b>", round(densidad_perros_cuadra, 3), "</b>
+   <b>Estimación por cuadras</b><br>
+   Perros estimados: <b> (", total_perros_muestra, " / ", cuadras_muestra, ") × ", total_cuadras,"=", round(perros_estimados_cuadras,0), "</b><br>
+   Densidad km²: <b>", round(densidad_km2_cuadras,1), "</b><br><br>
+   
+   <b>Estimación por viviendas</b><br>
+   Perros estimados: <b>(", total_perros_muestra, " / ", total_viviendas_muestra, ") × ", total_viviendas_cluster, "=", round(perros_estimados_viviendas,0), "</b><br>
+   Densidad km²: <b>", round(densidad_km2_viviendas,1), "</b>
    
    </div>"
 )
-
 
 # Se dibujara un mapa donde se pintaran las cuadras de un color gris solo para tenerlo de referencia
 # y los puntos dentro de las cuadras seran proporcionales a la cantidad de perros vacunados
@@ -334,78 +386,78 @@ survey %>%
 
 # Ahora agregamos el poligono de la cuadra
 deamb_mz <- survey %>%
+  filter(!is.na(unicode_mz)) %>%
   group_by(unicode_mz) %>%
   summarise(
     total_deamb = sum(perros_deambulantes, na.rm = TRUE),
-    total_encuestas = n(),
+    viviendas = n(),
     .groups = "drop"
   )
 
 # Unir con tu la variable "mapa_final"
 mapa_deamb <- mapa_final %>%
-  left_join(deamb_mz, by = c("ident" = "unicode_mz"))
-
-# Variables para poner en el cuadro de texto en el mapa
-# Total de cuadras del cluster
-total_cuadras <- nrow(mapa_final)
-# Cuadras con muestra (donde hubo encuesta válida)
-cuadras_muestra <- nrow(deamb_mz)
-# Total de perros deambulantes en la muestra
-total_deamb_muestra <- sum(deamb_mz$total_deamb, na.rm = TRUE)
-# Densidad de perros deambulantes por cuadra (muestra)
-densidad_deamb_cuadra <- total_deamb_muestra / cuadras_muestra
-# Densidad relativa respecto al total de perros
-total_perros_muestra <- sum(survey$total_can, na.rm = TRUE)
-proporcion_deamb <- total_deamb_muestra / total_perros_muestra
-
-# Panel informativo
-info_panel_deamb <- paste0(
-  "<div style='background:white; padding:10px; border-radius:8px;
-   box-shadow:0 0 10px rgba(0,0,0,0.2); font-size:14px;'>
-   
-   <b>Perros deambulantes - Resumen Cluster</b><br><br>
-   
-   Total de cuadras: <b>", total_cuadras, "</b><br>
-   Cuadras con muestra: <b>", cuadras_muestra, "</b><br><br>
-   
-   <b>Total perros deambulantes (muestra)</b>: ",
-  total_deamb_muestra, "<br><br>
-   
-   <b>Densidad por cuadra (muestra)</b><br>
-   Fórmula: Deambulantes / Cuadras<br>
-   = ", total_deamb_muestra, " / ", cuadras_muestra, "<br>
-   Resultado: <b>", round(densidad_deamb_cuadra, 3), "</b><br><br>
-   
-   <b>Proporción respecto al total de perros</b><br>
-   Fórmula: Deambulantes / Total perros<br>
-   = ", total_deamb_muestra, " / ", total_perros_muestra, "<br>
-   Resultado: <b>", round(proporcion_deamb, 3), "</b>
-   
-   </div>"
-)
-
-
-# Crear punto dentro de la cuadra
-centroides_deamb <- mapa_deamb %>%
-  filter(!is.na(total_deamb) & total_deamb > 0) %>%
-  st_point_on_surface()
-
-# Poner un radio al circulo que sea proporcional a la cantidad de perros
-centroides_deamb <- centroides_deamb %>%
-  mutate(
-    radius = scales::rescale(total_deamb, to = c(4, 20))
+  select(ident, geometry) %>%   # solo lo necesario
+  left_join(
+    deamb_mz,
+    by = c("ident" = "unicode_mz")
   )
 
-# Crear el label que se muestra en cada circulo
-centroides_deamb <- centroides_deamb %>%
+## Variables para poner en el cuadro de texto en el mapa
+cuadras_muestra_deamb <- sum(!is.na(mapa_deamb$total_deamb))
+total_deamb_muestra <- sum(mapa_deamb$total_deamb, na.rm = TRUE)
+# Expansión por cuadras
+deamb_estimados_cuadras <-
+  (total_deamb_muestra / cuadras_muestra_deamb) * total_cuadras
+densidad_km2_deamb_cuadras <-
+  deamb_estimados_cuadras / area_cluster_km2
+
+# Expansión por viviendas
+total_viviendas_muestra_deamb <- sum(mapa_deamb$viviendas, na.rm = TRUE)
+deamb_estimados_viviendas <-
+  (total_deamb_muestra / total_viviendas_muestra_deamb) *
+  total_viviendas_cluster
+densidad_km2_deamb_viviendas <-
+  deamb_estimados_viviendas / area_cluster_km2
+
+# Crear punto dentro de la cuadra y poner un punto proporcional a la cantidad de perros
+centroides_deamb <- mapa_deamb %>%
+  filter(!is.na(total_deamb) & total_deamb > 0) %>%
+  st_point_on_surface() %>%
   mutate(
+    radius = scales::rescale(total_deamb, to = c(4, 20)),
     label_html = paste0(
       "<div style='font-size:13px;'>",
-      "<b>Block:</b> ", ident, "<br>",
+      ident, "<br>",
       "<b>Stray Dogs:</b> ", total_deamb,
       "</div>"
     )
   )
+
+# Panel informativo
+info_panel_deamb <- paste0(
+  "<div style='background:white; padding:10px; border-radius:8px;
+   box-shadow:0 0 10px rgba(0,0,0,0.2); font-size:14px;'>",
+  
+  "Área del cluster (km²): <b>", round(area_cluster_km2, 3), "</b><br>",
+  "Total cuadras: <b>", total_cuadras, "</b><br>",
+  "Cuadras muestra: <b>", cuadras_muestra_deamb, "</b><br>",
+  "Total perros deambulantes muestra: <b>", total_deamb_muestra, "</b><br>",
+  "Total viviendas: <b>", total_viviendas_cluster, "</b><br><br>",
+  
+  "<b>Estimación por cuadras</b><br>",
+  "Perros estimados: <b>",
+  round(deamb_estimados_cuadras,0), "</b><br>",
+  "Densidad km²: <b>",
+  round(densidad_km2_deamb_cuadras,1), "</b><br><br>",
+  
+  "<b>Estimación por viviendas</b><br>",
+  "Perros estimados: <b>",
+  round(deamb_estimados_viviendas,0), "</b><br>",
+  "Densidad km²: <b>",
+  round(densidad_km2_deamb_viviendas,1), "</b>",
+  
+  "</div>"
+)
 
 # Mapa de perros deambulantes
 leaflet() %>%
@@ -421,22 +473,17 @@ leaflet() %>%
   
   addCircleMarkers(
     data = centroides_deamb,
-    radius = ~radius,
+    lng = ~st_coordinates(geometry)[,1],
+    lat = ~st_coordinates(geometry)[,2],
+    radius = ~sqrt(total_deamb) * 2,
     fillColor = "purple",
     fillOpacity = 0.85,
     color = "white",
     weight = 1,
     label = ~lapply(label_html, htmltools::HTML),
-    labelOptions = labelOptions(
-      direction = "auto",
-      style = list(
-        "background-color" = "white",
-        "border-radius" = "6px",
-        "padding" = "6px"
-      )
-    )
+    labelOptions = labelOptions(direction = "auto")
   ) %>%
-
+  
   addControl(
     html = info_panel_deamb,
     position = "bottomright"
