@@ -10,9 +10,14 @@ library(readr)
 library(stringr)
 library(ggplot2)
 library(purrr)
+library(leaflet)
+library(readxl) # Para leer archivo xlxs
 
 # Variables globales
 ANIO <- 2024
+PATH_HABILITY <- "~/Descargas/Data_houses_and_habitability.xlsx"  #Año 2024
+NUMBER_CLUSTER <- 1
+NAME_MICRORED <- "MR_SAN_MARTIN_SOCABAYA"
 PATH_DATA <- "~/Descargas/post_vancan_limpio.csv"
 PATH_MZ <- "/home/pantro/Descargas/Mz_Cluster-selected"
 
@@ -20,7 +25,17 @@ PATH_MZ_CLUSTER <- "/home/pantro/Descargas/Mz_Cluster-selected/Cluster_01_Mz_16e
 PATH_HOUSE_CLUSTER = "~/Descargas/Points_cluster-selected/Point_Cluster_01_08mar2024.csv"
 
 viviendas_cluster <- read.csv(PATH_HOUSE_CLUSTER, sep = ";")
-total_viviendas_cluster <- length(unique(viviendas_cluster$UNICODE))
+# Total de viviendas en el cluster suponiendo que todas las viviendas participaron
+#total_viviendas_cluster <- length(unique(viviendas_cluster$UNICODE))
+# Total de viviendas en el cluster obtenidas por la habitabilidad de la localidad
+houses_per_locality <- viviendas_cluster %>%
+  mutate(
+    name_locality = paste(P, D, L, sep = ".")
+  ) %>%
+  #distinct(name_locality, name_block) %>%  # evita duplicados
+  count(name_locality, name = "n_houses") %>%
+  select(name_locality, n_houses)
+#---Conitnuo mas abajo por que necesito la habitabilidad
 
 # Leer datos
 survey <- read.csv(PATH_DATA)
@@ -43,6 +58,63 @@ dogs_mz <- survey %>%
 
 # Elimino la columna cluster ya que despues tambien lo tengo de otra base de datos
 dogs_mz$cluster <- NULL
+
+##---------------------------------------------------------- 
+# HABITABILIDAD
+locality_habitability <- read_excel(PATH_HABILITY,
+                           sheet = NAME_MICRORED) %>%
+  mutate(
+    L = gsub("\\..*", "", L),
+    Cluster = as.numeric(Cluster),
+    name_locality = paste(P, D, L, sep = ".")
+  ) %>%
+  filter(Cluster == NUMBER_CLUSTER)%>%
+  select(name_locality, Habitability)
+
+# Rutas de viviendas, cuadras y localidades
+PATH_POINTS <- "~/Descargas/Point_Cluster_01_10ene2024.kml" #"SPATIAL_DATA_AQP/Points_AQP/Points_cluster/Point_Cluster_01_10ene2024.kml"
+PATH_BLOCKS <- "~/Descargas/Cluster_01_Mz_16ene2026.kml" #"SPATIAL_DATA_AQP/Blocks_AQP/Mz_Cluster/Cluster_01_Mz_16ene2026.kml"
+# Leer
+houses <- st_read(PATH_POINTS, quiet = TRUE) %>%
+  select(Name, geometry) %>%
+  rename(name_house = Name)
+blocks <- st_read(PATH_BLOCKS, quiet = TRUE) %>%
+  select(Name, geometry) %>%
+  rename(name_block = Name)
+# Validar geometrías solo utilizaremos para cuadras y viviendas
+sf_use_s2(FALSE)
+houses <- st_make_valid(houses)
+blocks <- st_make_valid(blocks)
+# 2. reproyectar a UTM 19S (Arequipa)
+blocks_proj <- st_transform(blocks, 32719)
+houses_proj <- st_transform(houses, 32719)
+# limpiar geometrías problemáticas
+blocks_proj <- st_buffer(blocks_proj, 0)
+# Asignar viviendas a cuadras
+houses_blocks <- st_join(
+  houses_proj,
+  blocks_proj,
+  join = st_within,
+  left = TRUE
+)
+# Viviendas sin cuadra
+houses_outside <- houses_blocks %>%
+  filter(is.na(name_block))  # elimine 3 viviendas
+# Viviendas por cuadra
+houses_per_block <- houses_blocks %>%
+  st_drop_geometry() %>%
+  count(name_block, name = "n_houses")
+# Para encontrar Cuadras por localidad vamos a utilizar el nombre de las cuadras
+blocks_per_locality <- blocks %>%
+  st_drop_geometry() %>%
+  mutate(
+    name_locality = str_remove(name_block, "-.*$")
+  ) %>%
+  distinct(name_locality, name_block) %>%  # evita duplicados
+  count(name_locality, name = "n_blocks") %>%
+  arrange(desc(n_blocks))
+
+##----------------------------------------------------------
 
 # Leer los poligonos de las manzanas
 #files <- list.files(
@@ -269,7 +341,24 @@ area_cluster_km2 <- as.numeric(
 ) / 1e6
 
 # Total de cuadras del cluster
-total_cuadras <- nrow(union_mzgps_numdogs)
+#total_cuadras_cluster <- nrow(union_mzgps_numdogs) # Esto era pensando que el 100% de las cuadras de las localidades participaba
+# Obteniendo la cantidad de cuadra por localidad con respecto a la habitabilidad
+total_cuadras_cluster <- blocks_per_locality %>%
+  left_join(locality_habitability, by = "name_locality") %>%
+  mutate(
+    habited_blocks = round(n_blocks * Habitability / 100)
+  ) %>%
+  summarise(total = sum(habited_blocks, na.rm = TRUE)) %>%
+  pull(total)
+
+# Total de viviendas en el cluster
+total_viviendas_cluster <- houses_per_locality %>%
+  left_join(locality_habitability, by = "name_locality") %>%
+  mutate(
+    habited_houses = round(n_houses * Habitability / 100)
+  ) %>%
+  summarise(total = sum(habited_houses, na.rm = TRUE)) %>%
+  pull(total)
 
 # Cuadras en la muestra
 cuadras_muestra <- nrow(centroides)
@@ -280,7 +369,7 @@ total_perros_muestra <- sum(centroides$total_dogs, na.rm = TRUE)
 ## Estimacion por regla de 3 simple
 # Estimación total perros en cluster (expansión por cuadras)
 perros_estimados_cuadras <-
-  (total_perros_muestra / cuadras_muestra) * total_cuadras
+  (total_perros_muestra / cuadras_muestra) * total_cuadras_cluster
 # Densidad km2 usando expansión por cuadras
 densidad_km2_cuadras <-
   perros_estimados_cuadras / area_cluster_km2
@@ -304,19 +393,20 @@ info_panel <- paste0(
    box-shadow:0 0 10px rgba(0,0,0,0.2); font-size:14px;'>
    
    Área del cluster (km²): <b>", round(area_cluster_km2, 3), "</b><br>
-   Total cuadras: <b>", total_cuadras, "</b><br>
+   Total cuadras del cluster: <b>", total_cuadras_cluster, "</b><br>
    Cuadras muestra: <b>", cuadras_muestra, "</b><br>
    Total perros muestra: <b>", total_perros_muestra, "</b><br>
-   Total viviendas: <b>", total_viviendas_cluster, "</b><br><br>
+   Total viviendas muestra: <b>", total_viviendas_muestra, "</b><br>
+   Total viviendas cluster: <b>", total_viviendas_cluster, "</b><br><br>
    
    <b>Estimación por cuadras</b><br>
-   Perros estimados: <b> (", total_perros_muestra, " / ", cuadras_muestra, ") × ", total_cuadras,"=", round(perros_estimados_cuadras,0), "</b><br>
-   Densidad km²: <b>", round(densidad_km2_cuadras,1), "</b><br><br>
+   Perros estimados: <b> (", total_perros_muestra, " / ", cuadras_muestra, ") × ", total_cuadras_cluster,"=", round(perros_estimados_cuadras,0), "</b><br>
+   Densidad km²: <b> (", round(perros_estimados_cuadras,0), " / ", round(area_cluster_km2,2),") = ", round(densidad_km2_cuadras,1), "</b><br><br>
    
    <b>Estimación por viviendas</b><br>
    Perros estimados: <b>(", total_perros_muestra, " / ", total_viviendas_muestra, ") × ", total_viviendas_cluster, "=", round(perros_estimados_viviendas,0), "</b><br>
-   Densidad km²: <b>", round(densidad_km2_viviendas,1), "</b>
-   
+   Densidad km²: <b> (", round(perros_estimados_viviendas,0), " / ", round(area_cluster_km2,2),") = ", round(densidad_km2_viviendas,1), "</b>
+  
    </div>"
 )
 
@@ -356,9 +446,13 @@ leaflet() %>%
     position = "bottomright"
   )
 
+
+
+#==============================================================================
 #==============================================================================
 #           ----            PERROS DEAMBULANTES        ---------------
 #=============================================================================
+#==============================================================================
 # Obligar a las columnas necesarias a ser numericas
 survey <- survey %>%
   mutate(across(
@@ -407,7 +501,7 @@ cuadras_muestra_deamb <- sum(!is.na(mapa_deamb$total_deamb))
 total_deamb_muestra <- sum(mapa_deamb$total_deamb, na.rm = TRUE)
 # Expansión por cuadras
 deamb_estimados_cuadras <-
-  (total_deamb_muestra / cuadras_muestra_deamb) * total_cuadras
+  (total_deamb_muestra / cuadras_muestra_deamb) * total_cuadras_cluster
 densidad_km2_deamb_cuadras <-
   deamb_estimados_cuadras / area_cluster_km2
 
@@ -439,10 +533,10 @@ info_panel_deamb <- paste0(
    box-shadow:0 0 10px rgba(0,0,0,0.2); font-size:14px;'>",
   
   "Área del cluster (km²): <b>", round(area_cluster_km2, 3), "</b><br>",
-  "Total cuadras: <b>", total_cuadras, "</b><br>",
+  "Total cuadras del cluster: <b>", total_cuadras_cluster, "</b><br>",
   "Cuadras muestra: <b>", cuadras_muestra_deamb, "</b><br>",
   "Total perros deambulantes muestra: <b>", total_deamb_muestra, "</b><br>",
-  "Total viviendas: <b>", total_viviendas_cluster, "</b><br><br>",
+  "Total viviendas del cluster: <b>", total_viviendas_cluster, "</b><br><br>",
   
   "<b>Estimación por cuadras</b><br>",
   "Perros estimados: <b>",
