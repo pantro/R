@@ -17,6 +17,7 @@ library(leaflet)
 library(viridis)
 library(xml2)
 library(purrr)
+library(geosphere)
 
 # RUTAS DE ARCHIVOS
 kml_dir <- "D:/github_UPCH/rutas_vancan/GPS VANCAN 2023 JLByR/GPS VANCAN 2023 JLByR/"
@@ -29,22 +30,29 @@ UMBRAL_KMH <- 9.0 # Límite de velocidad humana
 # 2. MOTOR DE EXTRACCIÓN (Funciones Base)----
 #######################################################---
 
-# A. Procesar Manzanas
+# A. Función para dibujar las manzanas del distrito como contexto en el mapa
 procesar_manzanas <- function(ruta_csv) {
   if (!file.exists(ruta_csv)) return(NULL)
+  
+  # Leemos el archivo y limpiamos coordenadas vacías
   pol_raw <- read.csv(ruta_csv, sep = ";", stringsAsFactors = FALSE)
   pol_raw <- pol_raw %>% mutate(poly_id = cumsum(is.na(lat) | lat == "" | lat == "0"))
+  
   pol_clean <- pol_raw %>%
     filter(!(is.na(lat) | lat == "" | lat == "0")) %>%
     mutate(lat = as.numeric(gsub(",", ".", lat)), long = as.numeric(gsub(",", ".", long))) %>%
     filter(!is.na(lat) & !is.na(long))
   if(nrow(pol_clean) == 0) return(NULL)
+  
+  # Convertimos las coordenadas en polígonos espaciales (manzanas)
   return(pol_clean %>% st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
            group_by(poly_id) %>% summarise(geometry = st_cast(st_combine(geometry), "POLYGON"), .groups = "drop"))
 }
 
-# B. Extracción Forense (Individual)
+# B. Función principal: Analiza UN solo archivo KML, limpia el ruido y extrae la ruta real
 procesar_archivo_individual <- function(ruta_completa, nombre_archivo) {
+  
+  # 1. Leemos el archivo KML y extraemos los tiempos y las coordenadas en bruto
   kml <- read_xml(ruta_completa)
   ns <- xml_ns(kml)
   
@@ -57,6 +65,7 @@ procesar_archivo_individual <- function(ruta_completa, nombre_archivo) {
   
   n_max <- max(length(txt_time), nrow(mat_coord))
   
+  # Aseguramos que los datos tengan el mismo tamaño llenando con espacios vacíos si falta algo
   final_times <- rep(NA, n_max)
   final_lon <- rep(NA, n_max)
   final_lat <- rep(NA, n_max)
@@ -67,7 +76,7 @@ procesar_archivo_individual <- function(ruta_completa, nombre_archivo) {
     final_lat[1:nrow(mat_coord)] <- as.numeric(mat_coord[,2])
   }
   
-  # Crear Dataframe Base
+  # 2. Creamos una tabla inicial con los datos en bruto
   df <- data.frame(
     ARCHIVO = nombre_archivo,
     ID_Original = 1:n_max, 
@@ -77,39 +86,101 @@ procesar_archivo_individual <- function(ruta_completa, nombre_archivo) {
     stringsAsFactors = FALSE
   )
   
-  # Procesamiento y Lógica de Auditoría
+  # Procesamiento y ordenamiento
   df_proc <- df %>%
     mutate(Time = as.POSIXct(Time_Raw, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")) %>%
     arrange(Time)
   
-  # CORRECCIÓN HORA PERÚ (CRÍTICO)
+  # CORRECCIÓN HORA PERÚ
   attr(df_proc$Time, "tzone") <- "America/Lima"
   
-  df_final <- df_proc %>%
-    mutate(
-      delta_sec = as.numeric(difftime(Time, lag(Time), units = "secs")),
-      dist_m = sqrt((Longitude - lag(Longitude))^2 + (Latitude - lag(Latitude))^2) * 111139,
-      velocidad_kmh = (dist_m / delta_sec) * 3.6
-    ) %>%
-    mutate(
-      # Clasificación de Estado
-      ESTADO = case_when(
-        is.na(Time) ~ "ERROR ESTRUCTURA",
-        is.na(Longitude) | is.na(Latitude) ~ "ERROR COORDENADA", # Nueva validación
-        delta_sec == 0 ~ "DUPLICADO",
-        velocidad_kmh > UMBRAL_KMH ~ "RUIDO GPS (SALTO)",
-        TRUE ~ "OK"
-      ),
-      DETALLE = case_when(
-        ESTADO == "ERROR ESTRUCTURA" ~ "Punto Fantasma",
-        ESTADO == "ERROR COORDENADA" ~ "Coordenada Vacía",
-        ESTADO == "DUPLICADO" ~ "Registro duplicado",
-        ESTADO == "RUIDO GPS (SALTO)" ~ paste0("Exceso Vel: ", round(velocidad_kmh, 1), " km/h"),
-        TRUE ~ "Validado"
-      )
-    )
+  # ==========================================================
+  # === ELIMINACIÓN DE RUIDO (LÓGICA SECUENCIAL) ===
+  # Esta es la parte más importante. Evalúa punto por punto.
+  # Si detecta un punto falso (un salto de GPS), lo ignora y 
+  # calcula la distancia desde el ÚLTIMO PUNTO REAL CONOCIDO.
+  # ==========================================================
   
-  return(df_final)
+  # 1. Inicializamos columnas vacías para el cálculo
+  n_rows <- nrow(df_proc)
+  df_proc$delta_sec <- 0
+  df_proc$dist_m <- 0
+  df_proc$velocidad_kmh <- 0
+  df_proc$ESTADO <- "OK"
+  df_proc$DETALLE <- "Validado"
+  
+  # Evaluamos la primera fila manualmente
+  if (is.na(df_proc$Time[1])) {
+    df_proc$ESTADO[1] <- "ERROR ESTRUCTURA"
+    df_proc$DETALLE[1] <- "Punto Fantasma"
+  } else if (is.na(df_proc$Longitude[1]) || is.na(df_proc$Latitude[1])) {
+    df_proc$ESTADO[1] <- "ERROR COORDENADA"
+    df_proc$DETALLE[1] <- "Coordenada Vacía"
+  } else {
+    df_proc$DETALLE[1] <- "Punto Inicial"
+  }
+  
+  if (n_rows > 1) {
+    # Variable crucial: Memoria del último índice válido
+    last_valid_idx <- 1
+    
+    for (i in 2:n_rows) {
+      
+      # Filtros básicos: descartar si no hay tiempo o coordenadas
+      if (is.na(df_proc$Time[i])) {
+        df_proc$ESTADO[i] <- "ERROR ESTRUCTURA"
+        df_proc$DETALLE[i] <- "Punto Fantasma"
+        next
+      }
+      if (is.na(df_proc$Longitude[i]) || is.na(df_proc$Latitude[i])) {
+        df_proc$ESTADO[i] <- "ERROR COORDENADA"
+        df_proc$DETALLE[i] <- "Coordenada Vacía"
+        next
+      }
+      
+      # Calcular tiempo respecto al ÚLTIMO PUNTO VÁLIDO
+      t_current <- df_proc$Time[i]
+      t_last <- df_proc$Time[last_valid_idx]
+      
+      delta_t <- as.numeric(difftime(t_current, t_last, units = "secs"))
+      df_proc$delta_sec[i] <- delta_t
+      
+      # Si el tiempo es 0, es un registro duplicado por error del aparato
+      if (delta_t == 0) {
+        df_proc$ESTADO[i] <- "DUPLICADO"
+        df_proc$DETALLE[i] <- "Registro duplicado"
+        next
+      }
+      
+      # Calculamos la distancia real (en metros) usando la curvatura de la Tierra
+      dist_m <- geosphere::distHaversine(
+        c(df_proc$Longitude[last_valid_idx], df_proc$Latitude[last_valid_idx]),
+        c(df_proc$Longitude[i], df_proc$Latitude[i])
+      )
+      df_proc$dist_m[i] <- dist_m
+      
+      # Calculamos a qué velocidad se movió para llegar a esa distancia
+      vel_kmh <- (dist_m / delta_t) * 3.6
+      df_proc$velocidad_kmh[i] <- vel_kmh
+      
+      # Lógica Antirrebote: Evaluar y decidir si actualizamos la memoria
+      if (vel_kmh > UMBRAL_KMH) {
+        
+        # Si la velocidad es irreal (ej: > 9 km/h), marcamos como error.
+        # CRUCIAL: No actualizamos 'last_valid_idx'. Así, el siguiente punto
+        # se comparará con el punto bueno anterior al salto, cortando la cadena de error.
+        df_proc$ESTADO[i] <- "RUIDO GPS (SALTO)"
+        df_proc$DETALLE[i] <- paste0("Exceso Vel: ", round(vel_kmh, 1), " km/h")
+        # OJO: Aquí NO actualizamos last_valid_idx.
+        # El próximo ciclo del bucle seguirá comparando contra el punto anterior al salto.
+      } else {
+        # ¡Punto bueno! Actualizamos la memoria al índice actual
+        last_valid_idx <- i
+      }
+    }
+  }
+  
+  return(df_proc)
 }
 
 #######################################################---
