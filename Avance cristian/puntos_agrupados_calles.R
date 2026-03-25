@@ -29,7 +29,6 @@ csv_path <- file.path(kml_dir, "Mz_JLByR_08mar2024.csv")
 # LÓGICA BIOMECÁNICA
 USAR_PROMEDIO_AUTOMATICO <- FALSE 
 VELOCIDAD_CHATGPT_MS <- 1.5  
-MARGEN_CASA_M <- 10.0    
 
 #######################################################---
 # 2. FUNCIONES DE PROCESAMIENTO GEOMÉTRICO Y DATOS----
@@ -229,21 +228,20 @@ if(!is.null(pol_sf)) {
       real_idx <- idx_dentro[k]
       id_manzana <- matriz_dentro[[real_idx]][1]
       borde_manzana <- st_boundary(pol_sf[id_manzana, ])
-      distancia_borde <- as.numeric(st_distance(puntos_sf[real_idx, ], borde_manzana))
       
-      if(distancia_borde <= MARGEN_CASA_M) {
-        df_mapa$Ubicacion[real_idx] <- paste0("CASA (Margen aceptado: ", round(distancia_borde, 1), "m)")
-      } else {
-        df_mapa$Ubicacion[real_idx] <- paste0("A CALLE (Era drift de ", round(distancia_borde, 1), "m)")
-        df_mapa$Ajustado[real_idx] <- TRUE
-        
-        linea_nearest <- st_nearest_points(puntos_sf[real_idx, ], borde_manzana)
-        punto_calle <- st_cast(linea_nearest, "POINT")[2]
-        coords <- st_coordinates(punto_calle)
-        
-        df_mapa$Longitude[real_idx] <- coords[1,1]
-        df_mapa$Latitude[real_idx] <- coords[1,2]
-      }
+      # ALERTA: Todo punto dentro de manzana es movido a la calle
+      df_mapa$Ajustado[real_idx] <- TRUE
+      
+      linea_nearest <- st_nearest_points(puntos_sf[real_idx, ], borde_manzana)
+      punto_calle <- st_cast(linea_nearest, "POINT")[2]
+      coords <- st_coordinates(punto_calle)
+      
+      df_mapa$Longitude[real_idx] <- coords[1,1]
+      df_mapa$Latitude[real_idx] <- coords[1,2]
+      
+      # Recalcula la distancia original solo para reportarla en el popup
+      distancia_borde <- as.numeric(st_distance(puntos_sf[real_idx, ], borde_manzana))
+      df_mapa$Ubicacion[real_idx] <- paste0("A CALLE (Era drift de ", round(distancia_borde, 1), "m)")
     }
   }
 }
