@@ -1,12 +1,12 @@
 #######################################################---
-# SHINY APP: DASHBOARD FORENSE (VP21)
+# SHINY APP: DASHBOARD FORENSE SENIOR (VP21)
 # Explicación Paso a Paso: Ruido, Snapping y Clustering
 #######################################################---
 rm(list = ls())
 options(warn = -1)
 
 # 1. CARGA DE LIBRERÍAS
-paquetes <- c("shiny", "leaflet", "dplyr", "readr", "xml2", "readxl", "DT", "sf", "ggplot2", "geosphere")
+paquetes <- c("shiny", "leaflet", "dplyr", "readr", "xml2", "readxl", "DT", "sf", "ggplot2", "geosphere", "plotly")
 instalados <- paquetes %in% installed.packages()
 if(any(!instalados)) install.packages(paquetes[!instalados])
 
@@ -20,12 +20,13 @@ library(DT)
 library(sf)        
 library(ggplot2)   
 library(geosphere) 
+library(plotly)
 
 # CRÍTICO: Apagamos el motor espacial estricto para evitar errores de geometría
 sf_use_s2(FALSE) 
 
 cat("==================================================\n")
-cat("🎯 INICIANDO DASHBOARD: VP21 (CLUSTER 15)...\n")
+cat("🎯 INICIANDO DASHBOARD SENIOR: VP21 (CLUSTER 15)...\n")
 cat("==================================================\n")
 
 # =======================================================
@@ -140,40 +141,11 @@ ruta_excel_completa <- file.path(ruta_base, "surveys_2025-10-07.xlsx")
 ruta_kml_completa <- file.path(ruta_base, "GPS-53 22-06-2024 GRUPO 01.kml") 
 ruta_manzanas_csv <- "D:/github_UPCH/R/R/data_vacunacion/2025/Loc_cluster_15_11may2023.csv" 
 
-# =======================================================
-# C. ETL 1: APLICATIVO (EXCEL)
-# =======================================================
-cat(">>> 1. Procesando App...\n")
-df_app_raw <- read_excel(ruta_excel_completa)
-colnames(df_app_raw) <- tolower(colnames(df_app_raw))
-if(!"number_dog_vaccinated" %in% colnames(df_app_raw)) df_app_raw$number_dog_vaccinated <- 1
-
-df_app_vp21 <- df_app_raw %>%
-  select(block_id, cluster, user_app, date, lat, long, number_dog_vaccinated) %>%
-  mutate(
-    lat = as.numeric(gsub(",", ".", as.character(lat))), long = as.numeric(gsub(",", ".", as.character(long))),
-    date_clean = as.POSIXct(as.character(date), format="%Y-%m-%dT%H:%M:%OS", tz="America/Lima"),
-    cluster_std = toupper(gsub(" ", "", as.character(cluster))), user_std = toupper(trimws(as.character(user_app))),
-    perros_vacunados = as.numeric(number_dog_vaccinated),
-    perros_vacunados = ifelse(is.na(perros_vacunados), 1, perros_vacunados)
-  ) %>%
-  filter(cluster_std == "CLUSTER15" & user_std == "VP21" & as.Date(date_clean, tz="America/Lima") == as.Date("2025-06-22")) %>%
-  filter(!is.na(long) & !is.na(lat) & long != 0 & lat != 0) %>% 
-  arrange(date_clean) %>%
-  mutate(orden_vacunacion = row_number(), hora_dia = format(date_clean, "%H:00"))
-
-attr(df_app_vp21$date_clean, "tzone") <- "America/Lima"
-
-# Métricas Básicas App
-total_app_crudo <- nrow(df_app_vp21)
-tiempo_app_horas <- as.numeric(difftime(max(df_app_vp21$date_clean), min(df_app_vp21$date_clean), units="hours"))
-total_perros_vacunados <- sum(df_app_vp21$perros_vacunados, na.rm = TRUE)
-df_grafico_app <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total_Perros = sum(perros_vacunados, na.rm = TRUE))
 
 # =======================================================
-# D. ETL 2: RUTAS GPS (KML)
+# D. ETL 2: RUTAS GPS (KML) (Se procesa primero para obtener el centro espacial)
 # =======================================================
-cat(">>> 2. Procesando GPS...\n")
+cat(">>> 1. Procesando GPS...\n")
 kml_doc <- read_xml(ruta_kml_completa); ns <- xml_ns(kml_doc)
 tramos <- xml_find_all(kml_doc, ".//gx:Track", ns)
 
@@ -216,6 +188,68 @@ if (nrow(df_gps_raw) > 0) {
 df_gps_validos <- df_gps_raw %>% filter(ESTADO == "OK") %>% mutate(orden_rutina = row_number())
 df_gps_ruido <- df_gps_raw %>% filter(ESTADO == "RUIDO")
 vel_promedio_trabajador <- mean(df_gps_validos$velocidad_ms[df_gps_validos$velocidad_ms > 0], na.rm = TRUE)
+
+# CENTRO ESPACIAL DE TRABAJO (Para limpiar puntos app muy lejanos)
+centro_trabajo_lon <- mean(df_gps_validos$LONG, na.rm = TRUE)
+centro_trabajo_lat <- mean(df_gps_validos$LAT, na.rm = TRUE)
+RADIO_MAXIMO_TRABAJO_M <- 1500 # Puntos a más de 1.5 km del centro se eliminan
+
+# =======================================================
+# C. ETL 1: APLICATIVO (EXCEL) CON FILTROS ESTRICTOS Y DE DISTANCIA
+# =======================================================
+cat(">>> 2. Procesando App...\n")
+df_app_raw <- read_excel(ruta_excel_completa)
+colnames(df_app_raw) <- tolower(colnames(df_app_raw))
+
+if(!"type_house" %in% colnames(df_app_raw)) df_app_raw$type_house <- "P"
+if(!"raise_dog_house" %in% colnames(df_app_raw)) df_app_raw$raise_dog_house <- "SI"
+if(!"number_dog_house" %in% colnames(df_app_raw)) df_app_raw$number_dog_house <- 1
+if(!"number_dog_vaccinated_2024" %in% colnames(df_app_raw)) df_app_raw$number_dog_vaccinated_2024 <- 0
+if(!"number_dog_vaccinated_sweep" %in% colnames(df_app_raw)) df_app_raw$number_dog_vaccinated_sweep <- 0
+
+df_app_vp21 <- df_app_raw %>%
+  select(block_id, cluster, user_app, date, lat, long, type_house, raise_dog_house, number_dog_house, number_dog_vaccinated_2024, number_dog_vaccinated_sweep) %>%
+  mutate(
+    lat = as.numeric(gsub(",", ".", as.character(lat))), long = as.numeric(gsub(",", ".", as.character(long))),
+    date_clean = as.POSIXct(as.character(date), format="%Y-%m-%dT%H:%M:%OS", tz="America/Lima"),
+    cluster_std = toupper(gsub(" ", "", as.character(cluster))), user_std = toupper(trimws(as.character(user_app))),
+    type_house_std = toupper(trimws(as.character(type_house))),
+    rdh = toupper(trimws(as.character(raise_dog_house))),
+    n_dog_house = as.numeric(number_dog_house),
+    v_2024 = as.numeric(number_dog_vaccinated_2024),
+    v_sweep = as.numeric(number_dog_vaccinated_sweep)
+  ) %>%
+  mutate(
+    n_dog_house = ifelse(is.na(n_dog_house), 0, n_dog_house),
+    v_2024 = ifelse(is.na(v_2024), 0, v_2024),
+    v_sweep = ifelse(is.na(v_sweep), 0, v_sweep),
+    perros_vacunados = v_2024 + v_sweep
+  ) %>%
+  filter(cluster_std == "CLUSTER15" & user_std == "VP21" & as.Date(date_clean, tz="America/Lima") == as.Date("2025-06-22")) %>%
+  filter(type_house_std %in% c("P", "DOG_ANOTHER_AREA")) %>%
+  filter(rdh == "SI" | rdh == "SÍ") %>%
+  filter(!is.na(long) & !is.na(lat) & long != 0 & lat != 0) 
+
+# --- FILTRO DE RELEVANCIA ESPACIAL (Elimina Outliers) ---
+df_app_vp21$distancia_al_centro <- mapply(calcular_distancia, centro_trabajo_lon, centro_trabajo_lat, df_app_vp21$long, df_app_vp21$lat)
+df_app_vp21 <- df_app_vp21 %>% filter(distancia_al_centro <= RADIO_MAXIMO_TRABAJO_M) %>% arrange(date_clean) %>% mutate(orden_vacunacion = row_number(), hora_dia = format(date_clean, "%H:00"))
+
+attr(df_app_vp21$date_clean, "tzone") <- "America/Lima"
+
+# Métricas Básicas App 
+total_app_crudo <- nrow(df_app_vp21)
+total_perros_casa <- sum(df_app_vp21$n_dog_house, na.rm = TRUE)
+total_fijo <- sum(df_app_vp21$v_2024, na.rm = TRUE)
+total_barrido <- sum(df_app_vp21$v_sweep, na.rm = TRUE)
+total_perros_vacunados <- total_fijo + total_barrido
+promedio_perros <- ifelse(total_app_crudo > 0, total_perros_vacunados / total_app_crudo, 0)
+tiempo_app_horas <- as.numeric(difftime(max(df_app_vp21$date_clean), min(df_app_vp21$date_clean), units="hours"))
+
+df_grafico_fijo <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_2024, na.rm = TRUE)) %>% mutate(Tipo = "Punto Fijo")
+df_grafico_barrido <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_sweep, na.rm = TRUE)) %>% mutate(Tipo = "Barrido")
+df_grafico_gps <- df_gps_validos %>% mutate(hora_dia = format(TIME_FORMAT, "%H:00")) %>% group_by(hora_dia) %>% summarise(Total = n()) %>% mutate(Tipo = "Puntos GPS")
+df_grafico <- bind_rows(df_grafico_fijo, df_grafico_barrido, df_grafico_gps)
+
 
 # =======================================================
 # E. ETL 3: CATASTRO Y SNAPPING
@@ -318,8 +352,13 @@ ui <- bootstrapPage(
                             column(4,
                                    wellPanel(
                                      h4(" Desempeño"),
-                                     p(HTML(paste("<b>Perros Vacunados:</b>", total_perros_vacunados))),
-                                     p(HTML(paste("<b>Velocidad Promedio:</b>", round(vel_promedio_trabajador, 2), "m/s"))),
+                                     p(HTML(paste("<b>Total Casas Evaluadas:</b>", total_app_crudo))),
+                                     p(HTML(paste("<b>Total Perros Habitantes:</b>", total_perros_casa))),
+                                     p(HTML(paste("<b>Perros Vacunados (Punto Fijo):</b>", total_fijo))),
+                                     p(HTML(paste("<b>Perros Vacunados (Barrido):</b>", total_barrido))),
+                                     p(HTML(paste("<b>Total Perros Vacunados:</b>", total_perros_vacunados))),
+                                     p(HTML(paste("<b>Promedio Vacunados por Casa:</b>", round(promedio_perros, 2)))),
+                                     p(HTML(paste("<b>Velocidad Promedio GPS:</b>", round(vel_promedio_trabajador, 2), "m/s"))),
                                      p(HTML(paste("<b>Tiempo Trabajado:</b>", round(tiempo_app_horas, 2), "horas")))
                                    ),
                                    wellPanel(
@@ -331,8 +370,8 @@ ui <- bootstrapPage(
                             ),
                             column(8,
                                    wellPanel(
-                                     h4(" Picos de Producción"),
-                                     plotOutput("grafico_horarios", height = "350px")
+                                     h4(" Picos de Producción (App vs GPS)"),
+                                     plotlyOutput("grafico_horarios", height = "400px")
                                    )
                             )
                           )
@@ -347,17 +386,18 @@ server <- function(input, output, session) {
     paleta_gradiente_gps <- colorNumeric(palette = c("purple", "green"), domain = df_gps_validos$orden_rutina)
   }
   
-  # Gráfico
-  output$grafico_horarios <- renderPlot({
-    if(nrow(df_grafico_app) > 0){
-      ggplot(df_grafico_app, aes(x = hora_dia, y = Total_Perros)) +
-        geom_col(fill = "#e68102", color = "black", alpha = 0.8) +
-        geom_text(aes(label = Total_Perros), vjust = -0.5, fontface = "bold", size = 5) + 
+  output$grafico_horarios <- renderPlotly({
+    if(nrow(df_grafico) > 0){
+      p <- ggplot(df_grafico, aes(x = hora_dia, y = Total, fill = Tipo, text = paste("Hora:", hora_dia, "<br>Categoría:", Tipo, "<br>Cantidad:", Total))) +
+        geom_col(position = "dodge", color = "black", alpha = 0.8) +
+        scale_fill_manual(values = c("Punto Fijo" = "#1f77b4", "Barrido" = "#e68102", "Puntos GPS" = "#751dc3")) +
         theme_minimal() +
-        labs(x = "Hora del Día", y = "Nº de Perros Vacunados") +
-        theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12, face = "bold"),
-              axis.title = element_text(size = 14, face = "bold")) +
-        scale_y_continuous(expand = expansion(mult = c(0, 0.15))) 
+        labs(x = "Hora del Día", y = "Cantidad") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
+              axis.title = element_text(size = 12, face = "bold"),
+              legend.position = "top", legend.title = element_blank())
+      
+      ggplotly(p, tooltip = "text") %>% layout(hovermode = "x unified")
     }
   })
   
@@ -427,7 +467,7 @@ server <- function(input, output, session) {
       m <- m %>% addCircleMarkers(
         data = df_gps_ruido, lng = ~LONG, lat = ~LAT,
         radius = 4, fillColor = "#d32f2f", color = "black", weight = 1, fillOpacity = 0.8, group = "C_GPS_Bad",
-        popup = ~paste("<b> RUIDO</b><br>", round(velocidad_ms, 2), "m/s")
+        popup = ~paste("<b>⚠️ RUIDO</b><br>", round(velocidad_ms, 2), "m/s")
       )
     }
     
@@ -488,7 +528,7 @@ server <- function(input, output, session) {
           data = df_dinamico, lng = ~long, lat = ~lat,
           radius = ~ifelse(Puntos_Agrupados == 1, 5, 6 + Puntos_Agrupados), 
           fillColor = ~ifelse(Puntos_Agrupados == 1, "#e68102", "#b35900"), color = "white", weight = 2, fillOpacity = 0.9, group = "C_App_Snap", 
-          popup = ~paste("<b> Secuencia Agrupada</b><br><b>Rango:</b>", format(Hora_Inicio, "%H:%M:%S"), "-", format(Hora_Fin, "%H:%M:%S"),
+          popup = ~paste("<b>🎯 Secuencia Agrupada</b><br><b>Rango:</b>", format(Hora_Inicio, "%H:%M:%S"), "-", format(Hora_Fin, "%H:%M:%S"),
                          "<br><b>Perros Totales:</b>", perros_vacunados, "<br><b>IDs Originales:</b>", Registros_Unidos)
         )
       }
