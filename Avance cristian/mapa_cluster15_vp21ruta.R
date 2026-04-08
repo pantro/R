@@ -189,7 +189,7 @@ total_app_crudo <- nrow(df_app_vp21)
 total_perros_casa <- sum(df_app_vp21$n_dog_house, na.rm = TRUE)
 total_fijo <- sum(df_app_vp21$v_2024, na.rm = TRUE)
 total_barrido <- sum(df_app_vp21$v_sweep, na.rm = TRUE)
-total_perros_vacunados <- total_fijo + total_barrido
+total_perros_vacunados <- total_barrido
 # El promedio solo se calcula sobre las casas útiles (P o DOG_ANOTHER_AREA)
 total_casas_utiles <- sum(df_app_vp21$type_house_std %in% c("P", "DOG_ANOTHER_AREA") & (df_app_vp21$rdh == "SI" | df_app_vp21$rdh == "SÍ"), na.rm = TRUE)
 promedio_perros <- ifelse(total_casas_utiles > 0, total_perros_vacunados / total_casas_utiles, 0)
@@ -371,9 +371,9 @@ ui <- bootstrapPage(
                                      h4(" Desempeño"),
                                      p(HTML(paste("<b>Total Visitas App (P, LP, C, etc):</b>", total_app_crudo))),
                                      p(HTML(paste("<b>Total Perros Habitantes:</b>", total_perros_casa))),
-                                     p(HTML(paste("<b>Perros Vacunados (Punto Fijo):</b>", total_fijo))),
+                                     p(HTML(paste("<b>Perros Vacunados (Independientemente):</b>", total_fijo))),
                                      p(HTML(paste("<b>Perros Vacunados (Barrido):</b>", total_barrido))),
-                                     p(HTML(paste("<b>Total Perros Vacunados:</b>", total_perros_vacunados))),
+                                     p(HTML(paste("<b>Total Perros Vacunados contra la Rabia 2025:</b>", total_perros_vacunados))),
                                      p(HTML(paste("<b>Promedio Vacunados por Casa:</b>", round(promedio_perros, 2)))),
                                      p(HTML(paste("<b>Velocidad Promedio GPS:</b>", round(vel_promedio_trabajador, 2), "m/s"))),
                                      p(HTML(paste("<b>Tiempo Trabajado:</b>", round(tiempo_app_horas, 2), "horas")))
@@ -384,7 +384,6 @@ ui <- bootstrapPage(
                                      p(HTML(paste("<b style='color:#e68102;'>Área App (Punto a Punto):</b>", round(area_app_exacta_m2, 2), "m²"))),
                                      p(HTML(paste("<b style='color:#751dc3;'>Área GPS (Por Manzanas):</b>", round(area_manzanas_gps_m2, 2), "m²"))),
                                      p(HTML(paste("<b style='color:#e68102;'>Área App (Por Manzanas):</b>", round(area_manzanas_app_m2, 2), "m²"))),
-                                     p(HTML(paste("<b>Densidad Abarcada:</b>", round(ifelse(area_gps_exacta_m2>0, total_perros_vacunados/area_gps_exacta_m2, 0), 6), "perros / m²")))
                                    )
                             ),
                             column(8,

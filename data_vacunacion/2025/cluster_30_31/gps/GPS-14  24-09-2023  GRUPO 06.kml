@@ -1,0 +1,454 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>GPS-14  24-09-2023  GRUPO 06</name>
+	<visibility>0</visibility>
+	<snippet>Created vie. Nov. 3 11:41:15 2023</snippet>
+	<LookAt>
+		<gx:TimeSpan>
+			<begin>2023-09-24T13:33:22Z</begin>
+			<end>2023-09-24T17:49:35Z</end>
+		</gx:TimeSpan>
+		<longitude>-71.49252</longitude>
+		<latitude>-16.490378</latitude>
+		<altitude>0</altitude>
+		<heading>0</heading>
+		<tilt>0</tilt>
+		<range>1600.287689</range>
+	</LookAt>
+	<atom:link rel="app" href="https://www.google.com/earth/about/versions/#earth-pro" title="Google Earth Pro 7.3.6.10441"></atom:link>
+	<StyleMap id="multiTrack111">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#multiTrack_n111</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#multiTrack_h111</styleUrl>
+		</Pair>
+	</StyleMap>
+	<Style id="multiTrack_h111">
+		<IconStyle>
+			<scale>1.2</scale>
+			<Icon>
+				<href>https://earth.google.com/images/kml-icons/track-directional/track-0.png</href>
+			</Icon>
+		</IconStyle>
+		<LineStyle>
+			<color>ff00ffff</color>
+			<width>5</width>
+		</LineStyle>
+	</Style>
+	<Style id="multiTrack_n111">
+		<IconStyle>
+			<Icon>
+				<href>https://earth.google.com/images/kml-icons/track-directional/track-0.png</href>
+			</Icon>
+		</IconStyle>
+		<LineStyle>
+			<color>ff00ffff</color>
+			<width>5</width>
+		</LineStyle>
+	</Style>
+	<Folder>
+		<name>Tracks</name>
+		<visibility>0</visibility>
+		<Placemark>
+			<visibility>0</visibility>
+			<styleUrl>#multiTrack111</styleUrl>
+			<gx:Track>
+				<when>2023-09-24T13:33:22Z</when>
+				<when>2023-09-24T13:33:40Z</when>
+				<when>2023-09-24T13:41:46Z</when>
+				<when>2023-09-24T13:42:04Z</when>
+				<when>2023-09-24T13:49:14Z</when>
+				<when>2023-09-24T13:49:32Z</when>
+				<when>2023-09-24T13:50:08Z</when>
+				<when>2023-09-24T13:50:26Z</when>
+				<when>2023-09-24T13:51:01Z</when>
+				<when>2023-09-24T13:51:19Z</when>
+				<when>2023-09-24T13:51:37Z</when>
+				<when>2023-09-24T13:52:13Z</when>
+				<when>2023-09-24T13:52:31Z</when>
+				<when>2023-09-24T13:56:43Z</when>
+				<when>2023-09-24T13:57:01Z</when>
+				<when>2023-09-24T13:58:13Z</when>
+				<when>2023-09-24T13:58:31Z</when>
+				<when>2023-09-24T14:02:43Z</when>
+				<when>2023-09-24T14:03:01Z</when>
+				<when>2023-09-24T14:03:19Z</when>
+				<when>2023-09-24T14:03:37Z</when>
+				<when>2023-09-24T14:03:55Z</when>
+				<when>2023-09-24T14:14:07Z</when>
+				<when>2023-09-24T14:14:25Z</when>
+				<when>2023-09-24T14:14:43Z</when>
+				<when>2023-09-24T14:15:01Z</when>
+				<when>2023-09-24T14:15:37Z</when>
+				<when>2023-09-24T14:15:55Z</when>
+				<when>2023-09-24T14:16:31Z</when>
+				<when>2023-09-24T14:16:49Z</when>
+				<when>2023-09-24T14:18:19Z</when>
+				<when>2023-09-24T14:18:37Z</when>
+				<when>2023-09-24T14:20:25Z</when>
+				<when>2023-09-24T14:20:43Z</when>
+				<when>2023-09-24T14:22:13Z</when>
+				<when>2023-09-24T14:22:31Z</when>
+				<when>2023-09-24T14:22:49Z</when>
+				<when>2023-09-24T14:23:07Z</when>
+				<when>2023-09-24T14:49:31Z</when>
+				<when>2023-09-24T14:49:49Z</when>
+				<when>2023-09-24T15:03:19Z</when>
+				<when>2023-09-24T15:03:37Z</when>
+				<when>2023-09-24T15:04:49Z</when>
+				<when>2023-09-24T15:05:07Z</when>
+				<when>2023-09-24T15:07:31Z</when>
+				<when>2023-09-24T15:07:49Z</when>
+				<when>2023-09-24T15:21:01Z</when>
+				<when>2023-09-24T15:21:19Z</when>
+				<when>2023-09-24T15:21:37Z</when>
+				<when>2023-09-24T15:21:55Z</when>
+				<when>2023-09-24T15:22:13Z</when>
+				<when>2023-09-24T15:22:31Z</when>
+				<when>2023-09-24T15:22:49Z</when>
+				<when>2023-09-24T15:23:43Z</when>
+				<when>2023-09-24T15:24:01Z</when>
+				<when>2023-09-24T15:25:31Z</when>
+				<when>2023-09-24T15:25:49Z</when>
+				<when>2023-09-24T15:26:07Z</when>
+				<when>2023-09-24T15:26:25Z</when>
+				<when>2023-09-24T15:27:01Z</when>
+				<when>2023-09-24T15:27:19Z</when>
+				<when>2023-09-24T15:30:37Z</when>
+				<when>2023-09-24T15:30:55Z</when>
+				<when>2023-09-24T15:31:49Z</when>
+				<when>2023-09-24T15:32:07Z</when>
+				<when>2023-09-24T15:37:49Z</when>
+				<when>2023-09-24T15:38:07Z</when>
+				<when>2023-09-24T15:38:25Z</when>
+				<when>2023-09-24T15:38:43Z</when>
+				<when>2023-09-24T15:42:37Z</when>
+				<when>2023-09-24T15:42:55Z</when>
+				<when>2023-09-24T15:43:13Z</when>
+				<when>2023-09-24T15:54:19Z</when>
+				<when>2023-09-24T15:54:37Z</when>
+				<when>2023-09-24T15:54:55Z</when>
+				<when>2023-09-24T15:55:13Z</when>
+				<when>2023-09-24T15:55:31Z</when>
+				<when>2023-09-24T15:55:49Z</when>
+				<when>2023-09-24T15:56:07Z</when>
+				<when>2023-09-24T15:57:01Z</when>
+				<when>2023-09-24T15:57:19Z</when>
+				<when>2023-09-24T16:04:13Z</when>
+				<when>2023-09-24T16:04:31Z</when>
+				<when>2023-09-24T16:04:49Z</when>
+				<when>2023-09-24T16:05:07Z</when>
+				<when>2023-09-24T16:17:25Z</when>
+				<when>2023-09-24T16:17:43Z</when>
+				<when>2023-09-24T16:18:01Z</when>
+				<when>2023-09-24T16:18:19Z</when>
+				<when>2023-09-24T16:21:55Z</when>
+				<when>2023-09-24T16:22:13Z</when>
+				<when>2023-09-24T16:26:43Z</when>
+				<when>2023-09-24T16:27:01Z</when>
+				<when>2023-09-24T16:27:55Z</when>
+				<when>2023-09-24T16:28:13Z</when>
+				<when>2023-09-24T16:31:31Z</when>
+				<when>2023-09-24T16:31:49Z</when>
+				<when>2023-09-24T16:45:37Z</when>
+				<when>2023-09-24T16:45:55Z</when>
+				<when>2023-09-24T16:46:13Z</when>
+				<when>2023-09-24T16:46:31Z</when>
+				<when>2023-09-24T16:46:49Z</when>
+				<when>2023-09-24T16:47:07Z</when>
+				<when>2023-09-24T16:47:25Z</when>
+				<when>2023-09-24T16:47:43Z</when>
+				<when>2023-09-24T16:48:01Z</when>
+				<when>2023-09-24T16:48:19Z</when>
+				<when>2023-09-24T16:48:37Z</when>
+				<when>2023-09-24T16:48:55Z</when>
+				<when>2023-09-24T16:49:13Z</when>
+				<when>2023-09-24T16:49:31Z</when>
+				<when>2023-09-24T16:49:49Z</when>
+				<when>2023-09-24T16:50:07Z</when>
+				<when>2023-09-24T16:50:25Z</when>
+				<when>2023-09-24T16:50:43Z</when>
+				<when>2023-09-24T16:51:01Z</when>
+				<when>2023-09-24T16:51:19Z</when>
+				<when>2023-09-24T16:51:37Z</when>
+				<when>2023-09-24T16:52:13Z</when>
+				<when>2023-09-24T16:52:31Z</when>
+				<when>2023-09-24T16:53:07Z</when>
+				<when>2023-09-24T16:53:25Z</when>
+				<when>2023-09-24T16:53:43Z</when>
+				<when>2023-09-24T16:54:01Z</when>
+				<when>2023-09-24T16:54:19Z</when>
+				<when>2023-09-24T16:54:37Z</when>
+				<when>2023-09-24T16:54:55Z</when>
+				<when>2023-09-24T16:55:13Z</when>
+				<when>2023-09-24T16:55:31Z</when>
+				<when>2023-09-24T16:55:49Z</when>
+				<when>2023-09-24T16:56:07Z</when>
+				<when>2023-09-24T16:56:25Z</when>
+				<when>2023-09-24T16:57:01Z</when>
+				<when>2023-09-24T16:57:19Z</when>
+				<when>2023-09-24T16:57:37Z</when>
+				<when>2023-09-24T16:57:55Z</when>
+				<when>2023-09-24T16:58:13Z</when>
+				<when>2023-09-24T16:58:31Z</when>
+				<when>2023-09-24T16:58:49Z</when>
+				<when>2023-09-24T16:59:07Z</when>
+				<when>2023-09-24T17:12:55Z</when>
+				<when>2023-09-24T17:13:13Z</when>
+				<when>2023-09-24T17:13:31Z</when>
+				<when>2023-09-24T17:13:49Z</when>
+				<when>2023-09-24T17:15:01Z</when>
+				<when>2023-09-24T17:16:13Z</when>
+				<when>2023-09-24T17:17:25Z</when>
+				<when>2023-09-24T17:18:37Z</when>
+				<when>2023-09-24T17:19:49Z</when>
+				<when>2023-09-24T17:21:01Z</when>
+				<when>2023-09-24T17:22:13Z</when>
+				<when>2023-09-24T17:23:25Z</when>
+				<when>2023-09-24T17:24:37Z</when>
+				<when>2023-09-24T17:25:49Z</when>
+				<when>2023-09-24T17:26:43Z</when>
+				<when>2023-09-24T17:27:01Z</when>
+				<when>2023-09-24T17:28:13Z</when>
+				<when>2023-09-24T17:28:31Z</when>
+				<when>2023-09-24T17:28:49Z</when>
+				<when>2023-09-24T17:30:01Z</when>
+				<when>2023-09-24T17:31:13Z</when>
+				<when>2023-09-24T17:32:25Z</when>
+				<when>2023-09-24T17:33:37Z</when>
+				<when>2023-09-24T17:34:49Z</when>
+				<when>2023-09-24T17:36:01Z</when>
+				<when>2023-09-24T17:37:13Z</when>
+				<when>2023-09-24T17:38:25Z</when>
+				<when>2023-09-24T17:39:37Z</when>
+				<when>2023-09-24T17:40:49Z</when>
+				<when>2023-09-24T17:42:01Z</when>
+				<when>2023-09-24T17:42:19Z</when>
+				<when>2023-09-24T17:42:37Z</when>
+				<when>2023-09-24T17:42:39Z</when>
+				<when>2023-09-24T17:42:41Z</when>
+				<when>2023-09-24T17:42:59Z</when>
+				<when>2023-09-24T17:43:17Z</when>
+				<when>2023-09-24T17:43:35Z</when>
+				<when>2023-09-24T17:43:53Z</when>
+				<when>2023-09-24T17:44:47Z</when>
+				<when>2023-09-24T17:45:05Z</when>
+				<when>2023-09-24T17:45:23Z</when>
+				<when>2023-09-24T17:45:41Z</when>
+				<when>2023-09-24T17:45:59Z</when>
+				<when>2023-09-24T17:46:17Z</when>
+				<when>2023-09-24T17:46:35Z</when>
+				<when>2023-09-24T17:46:53Z</when>
+				<when>2023-09-24T17:47:11Z</when>
+				<when>2023-09-24T17:47:29Z</when>
+				<when>2023-09-24T17:47:47Z</when>
+				<when>2023-09-24T17:48:05Z</when>
+				<when>2023-09-24T17:48:23Z</when>
+				<when>2023-09-24T17:48:41Z</when>
+				<when>2023-09-24T17:48:59Z</when>
+				<when>2023-09-24T17:49:17Z</when>
+				<when>2023-09-24T17:49:35Z</when>
+				<gx:coord>-71.492554 -16.490969 2432.44</gx:coord>
+				<gx:coord>-71.492554 -16.491068 2434.67</gx:coord>
+				<gx:coord>-71.492554 -16.491068 2434.67</gx:coord>
+				<gx:coord>-71.49247 -16.491446 2439.56</gx:coord>
+				<gx:coord>-71.49247 -16.491446 2439.56</gx:coord>
+				<gx:coord>-71.49256099999999 -16.49106 2441.97</gx:coord>
+				<gx:coord>-71.49256099999999 -16.49106 2441.97</gx:coord>
+				<gx:coord>-71.492912 -16.490879 2432.92</gx:coord>
+				<gx:coord>-71.492912 -16.490879 2432.92</gx:coord>
+				<gx:coord>-71.493233 -16.491049 2425.45</gx:coord>
+				<gx:coord>-71.49324 -16.491072 2425.05</gx:coord>
+				<gx:coord>-71.49324 -16.491072 2425.05</gx:coord>
+				<gx:coord>-71.493225 -16.491457 2429.14</gx:coord>
+				<gx:coord>-71.493225 -16.491457 2429.14</gx:coord>
+				<gx:coord>-71.49324799999999 -16.491846 2431.52</gx:coord>
+				<gx:coord>-71.49324799999999 -16.491846 2431.52</gx:coord>
+				<gx:coord>-71.49327099999999 -16.492239 2426.2</gx:coord>
+				<gx:coord>-71.49327099999999 -16.492239 2426.2</gx:coord>
+				<gx:coord>-71.492851 -16.492241 2421.56</gx:coord>
+				<gx:coord>-71.492851 -16.492241 2421.56</gx:coord>
+				<gx:coord>-71.492493 -16.492384 2424.78</gx:coord>
+				<gx:coord>-71.49247 -16.492399 2425.29</gx:coord>
+				<gx:coord>-71.49247 -16.492399 2425.29</gx:coord>
+				<gx:coord>-71.492722 -16.49267 2414.16</gx:coord>
+				<gx:coord>-71.492722 -16.49267 2414.16</gx:coord>
+				<gx:coord>-71.493118 -16.492701 2419.33</gx:coord>
+				<gx:coord>-71.493118 -16.492701 2419.33</gx:coord>
+				<gx:coord>-71.493324 -16.492361 2418.78</gx:coord>
+				<gx:coord>-71.493324 -16.492361 2418.78</gx:coord>
+				<gx:coord>-71.493729 -16.492306 2418.46</gx:coord>
+				<gx:coord>-71.493729 -16.492306 2418.46</gx:coord>
+				<gx:coord>-71.493996 -16.492035 2416.13</gx:coord>
+				<gx:coord>-71.493996 -16.492035 2416.13</gx:coord>
+				<gx:coord>-71.49400300000001 -16.491655 2420.86</gx:coord>
+				<gx:coord>-71.49400300000001 -16.491655 2420.86</gx:coord>
+				<gx:coord>-71.49402600000001 -16.491293 2426.63</gx:coord>
+				<gx:coord>-71.49402600000001 -16.491293 2426.63</gx:coord>
+				<gx:coord>-71.49402600000001 -16.490929 2409.95</gx:coord>
+				<gx:coord>-71.49402600000001 -16.490929 2409.95</gx:coord>
+				<gx:coord>-71.494377 -16.490873 2428.55</gx:coord>
+				<gx:coord>-71.494377 -16.490873 2428.62</gx:coord>
+				<gx:coord>-71.494766 -16.490896 2420.94</gx:coord>
+				<gx:coord>-71.494766 -16.490896 2420.94</gx:coord>
+				<gx:coord>-71.495155 -16.490841 2424.97</gx:coord>
+				<gx:coord>-71.495155 -16.490841 2424.97</gx:coord>
+				<gx:coord>-71.49552199999999 -16.490971 2422.75</gx:coord>
+				<gx:coord>-71.49552199999999 -16.490971 2422.75</gx:coord>
+				<gx:coord>-71.495392 -16.49135 2422.72</gx:coord>
+				<gx:coord>-71.495392 -16.49135 2422.72</gx:coord>
+				<gx:coord>-71.49539900000001 -16.491745 2422.6</gx:coord>
+				<gx:coord>-71.49539900000001 -16.491756 2422.58</gx:coord>
+				<gx:coord>-71.49539900000001 -16.491756 2422.58</gx:coord>
+				<gx:coord>-71.49530799999999 -16.492128 2419.07</gx:coord>
+				<gx:coord>-71.49530799999999 -16.492128 2419.07</gx:coord>
+				<gx:coord>-71.495209 -16.492502 2418.43</gx:coord>
+				<gx:coord>-71.495209 -16.492502 2418.43</gx:coord>
+				<gx:coord>-71.495384 -16.492155 2409.72</gx:coord>
+				<gx:coord>-71.495384 -16.492155 2409.72</gx:coord>
+				<gx:coord>-71.495796 -16.492094 2409.26</gx:coord>
+				<gx:coord>-71.495796 -16.492094 2409.26</gx:coord>
+				<gx:coord>-71.496216 -16.492119 2408.8</gx:coord>
+				<gx:coord>-71.496216 -16.492119 2408.8</gx:coord>
+				<gx:coord>-71.496605 -16.492117 2405.3</gx:coord>
+				<gx:coord>-71.496605 -16.492117 2405.3</gx:coord>
+				<gx:coord>-71.497017 -16.492138 2406.21</gx:coord>
+				<gx:coord>-71.497017 -16.492138 2406.21</gx:coord>
+				<gx:coord>-71.49736799999999 -16.492311 2409.96</gx:coord>
+				<gx:coord>-71.49736799999999 -16.492311 2409.96</gx:coord>
+				<gx:coord>-71.497421 -16.492701 2405.85</gx:coord>
+				<gx:coord>-71.497421 -16.492701 2405.85</gx:coord>
+				<gx:coord>-71.497536 -16.493044 2401.02</gx:coord>
+				<gx:coord>-71.49756600000001 -16.493053 2401.16</gx:coord>
+				<gx:coord>-71.49756600000001 -16.493053 2401.16</gx:coord>
+				<gx:coord>-71.497467 -16.49267 2402.54</gx:coord>
+				<gx:coord>-71.497467 -16.49267 2402.54</gx:coord>
+				<gx:coord>-71.49739099999999 -16.492319 2407</gx:coord>
+				<gx:coord>-71.49736 -16.492304 2407.45</gx:coord>
+				<gx:coord>-71.49736 -16.492304 2407.45</gx:coord>
+				<gx:coord>-71.49700199999999 -16.492111 2412.86</gx:coord>
+				<gx:coord>-71.49700199999999 -16.492111 2412.86</gx:coord>
+				<gx:coord>-71.49691 -16.491747 2414.96</gx:coord>
+				<gx:coord>-71.49691 -16.491747 2414.96</gx:coord>
+				<gx:coord>-71.49691 -16.491356 2419.68</gx:coord>
+				<gx:coord>-71.49691 -16.491356 2419.68</gx:coord>
+				<gx:coord>-71.49691 -16.490963 2418.59</gx:coord>
+				<gx:coord>-71.49691 -16.490963 2418.59</gx:coord>
+				<gx:coord>-71.49696400000001 -16.49057 2416.78</gx:coord>
+				<gx:coord>-71.49696400000001 -16.49057 2416.78</gx:coord>
+				<gx:coord>-71.497292 -16.490343 2418.07</gx:coord>
+				<gx:coord>-71.497292 -16.490343 2418.07</gx:coord>
+				<gx:coord>-71.497383 -16.490337 2422.43</gx:coord>
+				<gx:coord>-71.497383 -16.490337 2422.43</gx:coord>
+				<gx:coord>-71.49700199999999 -16.490463 2419.71</gx:coord>
+				<gx:coord>-71.49700199999999 -16.490463 2419.71</gx:coord>
+				<gx:coord>-71.496674 -16.490685 2419.3</gx:coord>
+				<gx:coord>-71.496674 -16.490685 2419.3</gx:coord>
+				<gx:coord>-71.496284 -16.490685 2425.52</gx:coord>
+				<gx:coord>-71.496284 -16.490685 2425.52</gx:coord>
+				<gx:coord>-71.49587200000001 -16.490707 2426.48</gx:coord>
+				<gx:coord>-71.49587200000001 -16.490707 2426.48</gx:coord>
+				<gx:coord>-71.495468 -16.490711 2427.13</gx:coord>
+				<gx:coord>-71.495468 -16.490711 2427.13</gx:coord>
+				<gx:coord>-71.49505600000001 -16.490715 2427.59</gx:coord>
+				<gx:coord>-71.49505600000001 -16.490715 2427.59</gx:coord>
+				<gx:coord>-71.494652 -16.490715 2427.59</gx:coord>
+				<gx:coord>-71.494637 -16.490713 2427.59</gx:coord>
+				<gx:coord>-71.494637 -16.490713 2427.59</gx:coord>
+				<gx:coord>-71.494225 -16.490704 2430.04</gx:coord>
+				<gx:coord>-71.494225 -16.490704 2430.04</gx:coord>
+				<gx:coord>-71.493813 -16.490721 2430.96</gx:coord>
+				<gx:coord>-71.493813 -16.490721 2430.96</gx:coord>
+				<gx:coord>-71.493393 -16.490704 2431.51</gx:coord>
+				<gx:coord>-71.493393 -16.490704 2431.51</gx:coord>
+				<gx:coord>-71.492981 -16.490683 2434.01</gx:coord>
+				<gx:coord>-71.492981 -16.490683 2434.01</gx:coord>
+				<gx:coord>-71.492592 -16.490713 2433.23</gx:coord>
+				<gx:coord>-71.492592 -16.490713 2433.23</gx:coord>
+				<gx:coord>-71.492195 -16.490776 2436.09</gx:coord>
+				<gx:coord>-71.492195 -16.490782 2436.25</gx:coord>
+				<gx:coord>-71.49191999999999 -16.491081 2435.74</gx:coord>
+				<gx:coord>-71.49191999999999 -16.491081 2435.74</gx:coord>
+				<gx:coord>-71.491562 -16.4909 2441.01</gx:coord>
+				<gx:coord>-71.491562 -16.4909 2441.01</gx:coord>
+				<gx:coord>-71.491165 -16.490824 2446.2</gx:coord>
+				<gx:coord>-71.491165 -16.490824 2446.2</gx:coord>
+				<gx:coord>-71.49076100000001 -16.490759 2448.02</gx:coord>
+				<gx:coord>-71.49076100000001 -16.490759 2448.02</gx:coord>
+				<gx:coord>-71.490341 -16.490759 2447.07</gx:coord>
+				<gx:coord>-71.490341 -16.490759 2447.07</gx:coord>
+				<gx:coord>-71.48992200000001 -16.490751 2449.61</gx:coord>
+				<gx:coord>-71.48992200000001 -16.490751 2449.61</gx:coord>
+				<gx:coord>-71.48951 -16.490744 2455.05</gx:coord>
+				<gx:coord>-71.48951 -16.490744 2455.05</gx:coord>
+				<gx:coord>-71.489098 -16.490751 2457.99</gx:coord>
+				<gx:coord>-71.489098 -16.490751 2457.99</gx:coord>
+				<gx:coord>-71.488693 -16.490742 2455.85</gx:coord>
+				<gx:coord>-71.488693 -16.490742 2455.85</gx:coord>
+				<gx:coord>-71.488281 -16.490755 2459.84</gx:coord>
+				<gx:coord>-71.488281 -16.490755 2459.84</gx:coord>
+				<gx:coord>-71.48790700000001 -16.490795 2458.18</gx:coord>
+				<gx:coord>-71.48790700000001 -16.490797 2457.3</gx:coord>
+				<gx:coord>-71.487511 -16.49087 2451.72</gx:coord>
+				<gx:coord>-71.487511 -16.49087 2451.72</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.48747299999999 -16.491261 2454.8</gx:coord>
+				<gx:coord>-71.487503 -16.49087 2450.71</gx:coord>
+				<gx:coord>-71.487503 -16.49087 2450.71</gx:coord>
+				<gx:coord>-71.487503 -16.49087 2450.71</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.487869 -16.490805 2453.61</gx:coord>
+				<gx:coord>-71.488213 -16.490671 2453.17</gx:coord>
+				<gx:coord>-71.489876 -16.490726 2442.87</gx:coord>
+				<gx:coord>-71.490005 -16.490728 2440.66</gx:coord>
+				<gx:coord>-71.49009700000001 -16.490726 2438.59</gx:coord>
+				<gx:coord>-71.49099699999999 -16.490683 2434.25</gx:coord>
+				<gx:coord>-71.491135 -16.49058 2435.52</gx:coord>
+				<gx:coord>-71.49110400000001 -16.489897 2434.03</gx:coord>
+				<gx:coord>-71.491096 -16.489792 2433.78</gx:coord>
+				<gx:coord>-71.491096 -16.489792 2433.78</gx:coord>
+				<gx:coord>-71.49110400000001 -16.489643 2434.94</gx:coord>
+				<gx:coord>-71.491112 -16.489248 2437.13</gx:coord>
+				<gx:coord>-71.49112700000001 -16.488644 2433.92</gx:coord>
+				<gx:coord>-71.49112700000001 -16.488194 2432.31</gx:coord>
+				<gx:coord>-71.49112700000001 -16.488194 2432.31</gx:coord>
+				<gx:coord>-71.491135 -16.487883 2436.12</gx:coord>
+				<gx:coord>-71.491142 -16.487776 2432.45</gx:coord>
+				<gx:coord>-71.491226 -16.487703 2430.67</gx:coord>
+				<gx:coord>-71.49160000000001 -16.487808 2428.9</gx:coord>
+				<gx:coord>-71.49187499999999 -16.488144 2429.76</gx:coord>
+				<gx:coord>-71.49187499999999 -16.488317 2430.2</gx:coord>
+				<gx:coord>-71.49187499999999 -16.488317 2430.2</gx:coord>
+				<gx:coord>-71.49187499999999 -16.488594 2430.22</gx:coord>
+				<gx:coord>-71.49185900000001 -16.489109 2429.33</gx:coord>
+				<gx:coord>-71.491714 -16.489401 2428.59</gx:coord>
+				<gx:coord>-71.491005 -16.489408 2429.53</gx:coord>
+			</gx:Track>
+		</Placemark>
+	</Folder>
+</Document>
+</kml>
