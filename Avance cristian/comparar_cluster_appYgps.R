@@ -54,59 +54,79 @@ procesar_manzanas <- function(ruta_csv) {
            st_make_valid()) 
 }
 
+# ALGORITMO MEJORADO: Validación de <1.5m a la manzana
 sacar_a_la_calle <- function(df, lon_col, lat_col, poligonos) {
   df$Ubicacion <- "En la calle (Original)" 
   df$lon_orig <- df[[lon_col]]
   df$lat_orig <- df[[lat_col]]
   df$dist_ajuste_m <- 0
+  df$toca_manzana <- "NO" 
   
   if(is.null(poligonos) || nrow(poligonos) == 0 || nrow(df) == 0) return(df)
   
   pts <- st_as_sf(df, coords = c(lon_col, lat_col), crs = 4326)
-  intersecciones <- st_intersects(pts, poligonos)
   
-  for(i in seq_len(nrow(df))) {
-    if(length(intersecciones[[i]]) > 0) {
-      block_idx <- intersecciones[[i]][1]
-      borde <- st_cast(poligonos[block_idx, ], "MULTILINESTRING")
-      linea <- st_nearest_points(pts[i,], borde)
-      pt_calle <- st_cast(linea, "POINT")[2] 
-      coords <- st_coordinates(pt_calle)
+  suppressMessages(suppressWarnings({
+    intersecciones <- st_intersects(pts, poligonos)
+    toque_estricto <- st_is_within_distance(pts, poligonos, dist = 0.000015) # ~1.5 metros
+    
+    bordes_poligonos <- st_cast(st_geometry(poligonos), "MULTILINESTRING")
+    
+    for(i in seq_len(nrow(df))) {
+      # Validación estricta de pertenencia a manzana
+      if(length(toque_estricto[[i]]) > 0) {
+        df$toca_manzana[i] <- "SÍ"
+      }
       
-      df[i, lon_col] <- coords[1, 1]
-      df[i, lat_col] <- coords[1, 2]
-      df$Ubicacion[i] <- "Ajustado a vereda"
-      df$dist_ajuste_m[i] <- calcular_distancia(df$lon_orig[i], df$lat_orig[i], coords[1,1], coords[1,2])
+      pol_idx <- intersecciones[[i]]
+      if(length(pol_idx) > 0) {
+        borde <- bordes_poligonos[pol_idx[1]]
+        linea <- st_nearest_points(pts[i,], borde)
+        coords <- st_coordinates(linea)
+        
+        df[i, lon_col] <- coords[2, "X"]
+        df[i, lat_col] <- coords[2, "Y"]
+        df$Ubicacion[i] <- "Ajustado a vereda"
+        df$dist_ajuste_m[i] <- calcular_distancia(df$lon_orig[i], df$lat_orig[i], coords[2, "X"], coords[2, "Y"])
+      }
     }
-  }
+  }))
+  
   return(df)
 }
 
 agrupar_puntos_secuencial <- function(df_puntos, radio_metros, max_puntos) {
   if(nrow(df_puntos) == 0) return(NULL)
-  df_agrupado <- df_puntos %>% arrange(date_clean) %>% mutate(Cluster_ID = NA_integer_)
+  df_agrupado <- df_puntos %>% arrange(user_std, date_clean) %>% mutate(Cluster_ID = NA_integer_)
   
   cluster_actual <- 1
   puntos_en_cluster <- 0
-  centro_lon <- df_agrupado$long[1]
-  centro_lat <- df_agrupado$lat[1]
+  lon_prev <- df_agrupado$long[1]
+  lat_prev <- df_agrupado$lat[1]
+  user_prev <- df_agrupado$user_std[1]
   
   for (i in 1:nrow(df_agrupado)) {
-    if (puntos_en_cluster == 0) {
+    if (puntos_en_cluster == 0 || df_agrupado$user_std[i] != user_prev) {
+      if(df_agrupado$user_std[i] != user_prev) cluster_actual <- cluster_actual + 1
       df_agrupado$Cluster_ID[i] <- cluster_actual
       puntos_en_cluster <- 1
-      centro_lon <- df_agrupado$long[i]; centro_lat <- df_agrupado$lat[i]
+      lon_prev <- df_agrupado$long[i]
+      lat_prev <- df_agrupado$lat[i]
+      user_prev <- df_agrupado$user_std[i]
     } else {
-      dist_al_centro <- calcular_distancia(centro_lon, centro_lat, df_agrupado$long[i], df_agrupado$lat[i])
+      dist_al_previo <- calcular_distancia(lon_prev, lat_prev, df_agrupado$long[i], df_agrupado$lat[i])
       
-      if (dist_al_centro <= radio_metros && puntos_en_cluster < max_puntos) {
+      if (dist_al_previo <= radio_metros && puntos_en_cluster < max_puntos) {
         df_agrupado$Cluster_ID[i] <- cluster_actual
         puntos_en_cluster <- puntos_en_cluster + 1
+        lon_prev <- df_agrupado$long[i]
+        lat_prev <- df_agrupado$lat[i]
       } else {
         cluster_actual <- cluster_actual + 1
         df_agrupado$Cluster_ID[i] <- cluster_actual
         puntos_en_cluster <- 1
-        centro_lon <- df_agrupado$long[i]; centro_lat <- df_agrupado$lat[i]
+        lon_prev <- df_agrupado$long[i]
+        lat_prev <- df_agrupado$lat[i]
       }
     }
   }
@@ -114,6 +134,7 @@ agrupar_puntos_secuencial <- function(df_puntos, radio_metros, max_puntos) {
   df_final <- df_agrupado %>%
     group_by(Cluster_ID) %>%
     summarise(
+      user_std = first(user_std),
       long = mean(long), lat = mean(lat),
       Hora_Inicio = min(date_clean), Hora_Fin = max(date_clean),
       Puntos_Agrupados = n(),
@@ -173,6 +194,8 @@ for (archivo in archivos_gps) {
   }
 }
 
+if(length(lista_puntos_gps) == 0) stop("Error: KML sin coordenadas validas.")
+
 df_gps_raw <- bind_rows(lista_puntos_gps) %>%
   mutate(TIME_FORMAT = as.POSIXct(TIME, tryFormats = c("%Y-%m-%dT%H:%M:%OSZ", "%Y-%m-%dT%H:%M:%SZ"), tz="UTC")) %>%
   filter(!is.na(LONG) & !is.na(LAT) & !is.na(TIME_FORMAT)) %>% 
@@ -206,8 +229,20 @@ if(nrow(df_gps_raw) > 1) {
 }
 df_gps_raw$velocidad_ms <- v_vel; df_gps_raw$distancia_m <- v_dist; df_gps_raw$ESTADO <- v_estado
 
-df_gps_validos <- df_gps_raw %>% filter(ESTADO == "OK") %>% mutate(orden_rutina = row_number())
+df_gps_validos <- df_gps_raw %>% 
+  filter(ESTADO == "OK") %>% 
+  group_by(TRACK_ID) %>% 
+  arrange(TIME_FORMAT) %>%
+  mutate(orden_relativo = row_number()) %>%
+  ungroup() %>%
+  mutate(orden_rutina = row_number())
+
 df_gps_ruido <- df_gps_raw %>% filter(ESTADO == "RUIDO")
+
+velocidades_por_grupo <- df_gps_validos %>%
+  filter(velocidad_ms > 0) %>%
+  group_by(TRACK_ID) %>%
+  summarise(vel_promedio = round(mean(velocidad_ms, na.rm = TRUE), 2))
 vel_promedio_trabajador <- mean(df_gps_validos$velocidad_ms[df_gps_validos$velocidad_ms > 0], na.rm = TRUE)
 
 # =======================================================
@@ -219,29 +254,31 @@ if(!file.exists(ruta_app_csv)) stop(paste("Falta el archivo CSV en:", ruta_app_c
 df_app_vp21 <- read.csv(ruta_app_csv, stringsAsFactors = FALSE) %>%
   filter(!is.na(long) & !is.na(lat) & !is.na(date_clean)) %>%
   mutate(
-    date_clean = as.POSIXct(date_clean, tz="UTC"),
+    date_clean = as.POSIXct(date_clean, tz="America/Lima"),
     n_dog_house = as.numeric(number_dog_house),
     v_2024 = as.numeric(number_dog_vaccinated_2024),
     v_sweep = as.numeric(number_dog_vaccinated_sweep)
   ) %>%
-  arrange(date_clean) %>%
+  arrange(user_std, date_clean) %>%
+  group_by(user_std) %>%
   mutate(
     orden_vacunacion = row_number(), 
-    hora_dia = format(date_clean, "%H:00", tz="America/Lima")
-  )
-
-attr(df_app_vp21$date_clean, "tzone") <- "America/Lima"
-
-# Calcular velocidad para la App
-df_app_vp21 <- df_app_vp21 %>%
-  mutate(
+    hora_dia = format(date_clean, "%H:00 (%I %p)", tz="America/Lima"),
     lon_ant = lag(long), 
     lat_ant = lag(lat), 
-    tiempo_ant = lag(date_clean),
-    distancia_m_app = calcular_distancia(lon_ant, lat_ant, long, lat),
+    tiempo_ant = lag(date_clean)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    distancia_m_app = mapply(function(lo1, la1, lo2, la2) {
+      if(is.na(lo1) || is.na(la1)) return(0)
+      calcular_distancia(lo1, la1, lo2, la2)
+    }, lon_ant, lat_ant, long, lat),
     delta_t_app = as.numeric(difftime(date_clean, tiempo_ant, units="secs")),
     velocidad_ms = ifelse(!is.na(delta_t_app) & delta_t_app > 0, distancia_m_app / delta_t_app, 0)
   )
+
+attr(df_app_vp21$date_clean, "tzone") <- "America/Lima"
 
 # Metricas App
 total_app_crudo <- nrow(df_app_vp21)
@@ -249,20 +286,16 @@ total_fijo <- sum(df_app_vp21$v_2024, na.rm = TRUE)
 total_barrido <- sum(df_app_vp21$v_sweep, na.rm = TRUE)
 total_perros_vacunados <- total_fijo + total_barrido
 total_perros_casa <- sum(df_app_vp21$n_dog_house, na.rm = TRUE)
-total_casas_utiles <- sum(df_app_vp21$type_house_std %in% c("P", "DOG_ANOTHER_AREA") & (df_app_vp21$raise_dog_house == "SI" | df_app_vp21$raise_dog_house == "SÍ"), na.rm = TRUE)
-promedio_perros <- ifelse(total_casas_utiles > 0, total_perros_vacunados / total_casas_utiles, 0)
-tiempo_app_horas <- as.numeric(difftime(max(df_app_vp21$date_clean), min(df_app_vp21$date_clean), units="hours"))
 
-# Graficos
 df_grafico_fijo <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_2024, na.rm = TRUE)) %>% mutate(Tipo = "Punto Fijo")
 df_grafico_barrido <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_sweep, na.rm = TRUE)) %>% mutate(Tipo = "Barrido")
-df_grafico_gps <- df_gps_validos %>% group_by(hora_dia = format(TIME_FORMAT, "%H:00", tz="America/Lima")) %>% summarise(Total = n()) %>% mutate(Tipo = "Puntos GPS")
-df_grafico <- bind_rows(df_grafico_fijo, df_grafico_barrido, df_grafico_gps)
+# ELIMINADO EL GPS DEL GRÁFICO PARA SOLO MOSTRAR VACUNACIÓN
+df_grafico <- bind_rows(df_grafico_fijo, df_grafico_barrido)
 
 # =======================================================
-# E. ETL 3: CATASTRO, SNAPPING Y AREAS
+# E. ETL 3: CATASTRO Y AREAS OPTIMIZADAS
 # =======================================================
-cat(">>> 3. Cargando Catastro y Ajustando...\n")
+cat(">>> 3. Cargando Catastro...\n")
 archivos_poligonos <- list.files(ruta_poligonos_dir, pattern = "\\.csv$", full.names = TRUE, ignore.case = TRUE)
 
 lista_poligonos <- list()
@@ -278,45 +311,73 @@ lat_rango <- range(c(df_app_vp21$lat, df_gps_validos$LAT), na.rm = TRUE)
 bbox_valido <- all(is.finite(lon_rango)) && all(is.finite(lat_rango))
 
 if(!is.null(pol_sf) && bbox_valido) {
-  bbox_filtro <- st_bbox(c(xmin = lon_rango[1]-0.005, ymin = lat_rango[1]-0.005, xmax = lon_rango[2]+0.005, ymax = lat_rango[2]+0.005), crs = 4326)
-  pol_sf <- st_intersection(pol_sf, st_as_sfc(bbox_filtro))
+  suppressMessages(suppressWarnings({
+    bbox_filtro <- st_bbox(c(xmin = lon_rango[1]-0.005, ymin = lat_rango[1]-0.005, xmax = lon_rango[2]+0.005, ymax = lat_rango[2]+0.005), crs = 4326)
+    pol_sf <- st_intersection(pol_sf, st_as_sfc(bbox_filtro))
+  }))
 }
 
-# Aplicar Snapping
+cat(">>> Aplicando Snapping a Veredas...\n")
 df_app_vp21 <- sacar_a_la_calle(df_app_vp21, "long", "lat", pol_sf)
 df_gps_validos <- sacar_a_la_calle(df_gps_validos, "LONG", "LAT", pol_sf)
 
-# Areas Punto a Punto
-area_gps_exacta_m2 <- 0; coords_gps_closed <- NULL
-if(nrow(df_gps_validos) >= 3) {
-  coords_gps_closed <- rbind(as.matrix(df_gps_validos[, c("LONG", "LAT")]), as.matrix(df_gps_validos[1, c("LONG", "LAT")]))
-  area_gps_exacta_m2 <- sum(as.numeric(st_area(st_make_valid(st_sfc(st_polygon(list(coords_gps_closed)), crs = 4326)))))
-}
-
-area_app_exacta_m2 <- 0; coords_app_closed <- NULL
-if(nrow(df_app_vp21) >= 3) {
-  coords_app_closed <- rbind(as.matrix(df_app_vp21[, c("long", "lat")]), as.matrix(df_app_vp21[1, c("long", "lat")]))
-  area_app_exacta_m2 <- sum(as.numeric(st_area(st_make_valid(st_sfc(st_polygon(list(coords_app_closed)), crs = 4326)))))
-}
-
-# Areas Manzanas (OPTIMIZADO: Evita colapso inflando los poligonos levemente para st_intersects)
-area_manzanas_gps_m2 <- 0; tocadas_gps_sf <- NULL
-if(!is.null(pol_sf) && nrow(df_gps_validos) > 0) {
-  pts_gps_snap <- st_as_sf(df_gps_validos, coords = c("LONG", "LAT"), crs = 4326)
-  pol_inflado <- st_buffer(pol_sf, dist = 0.0001) # Inflado seguro en grados
-  idx_gps <- st_intersects(pol_inflado, pts_gps_snap)
-  tocadas_gps_sf <- pol_sf[lengths(idx_gps) > 0, ]
-  area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
-}
-
-area_manzanas_app_m2 <- 0; tocadas_app_sf <- NULL
-if(!is.null(pol_sf) && nrow(df_app_vp21) > 0) {
-  pts_app_snap <- st_as_sf(df_app_vp21, coords = c("long", "lat"), crs = 4326)
-  pol_inflado <- st_buffer(pol_sf, dist = 0.0001) # Inflado seguro en grados
-  idx_app <- st_intersects(pol_inflado, pts_app_snap)
-  tocadas_app_sf <- pol_sf[lengths(idx_app) > 0, ]
-  area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
-}
+cat(">>> Calculando Areas de Impacto...\n")
+suppressMessages(suppressWarnings({
+  
+  # Areas GPS
+  area_gps_exacta_m2 <- 0
+  poligonos_gps_lista <- list()
+  
+  for(tid in unique(df_gps_validos$TRACK_ID)) {
+    t_data <- df_gps_validos %>% filter(TRACK_ID == tid)
+    if(nrow(t_data) >= 3) {
+      pts_sf <- st_as_sf(t_data, coords = c("LONG", "LAT"), crs = 4326)
+      hull <- st_convex_hull(st_union(pts_sf))
+      area_gps_exacta_m2 <- area_gps_exacta_m2 + as.numeric(st_area(hull))
+      poligonos_gps_lista[[length(poligonos_gps_lista) + 1]] <- hull
+    }
+  }
+  
+  # Areas App 
+  area_app_exacta_m2 <- 0
+  poligonos_app_lista <- list()
+  
+  for(usu in unique(df_app_vp21$user_std)) {
+    u_data <- df_app_vp21 %>% filter(user_std == usu)
+    if(nrow(u_data) >= 3) {
+      pts_app_sf <- st_as_sf(u_data, coords = c("long", "lat"), crs = 4326)
+      hull_app <- st_convex_hull(st_union(pts_app_sf))
+      area_app_exacta_m2 <- area_app_exacta_m2 + as.numeric(st_area(hull_app))
+      poligonos_app_lista[[length(poligonos_app_lista) + 1]] <- hull_app
+    }
+  }
+  
+  # Areas Manzanas (st_is_within_distance)
+  area_manzanas_gps_m2 <- 0; tocadas_gps_sf <- NULL
+  if(!is.null(pol_sf) && nrow(df_gps_validos) > 0) {
+    pts_gps_snap <- st_as_sf(df_gps_validos, coords = c("LONG", "LAT"), crs = 4326)
+    idx_gps <- st_is_within_distance(pol_sf, pts_gps_snap, dist = 0.00015) 
+    tocadas_gps_sf <- pol_sf[lengths(idx_gps) > 0, ]
+    if(nrow(tocadas_gps_sf) > 0) area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
+  }
+  
+  area_manzanas_app_m2 <- 0; tocadas_app_sf <- NULL
+  if(!is.null(pol_sf) && nrow(df_app_vp21) > 0) {
+    pts_app_snap <- st_as_sf(df_app_vp21, coords = c("long", "lat"), crs = 4326)
+    idx_app <- st_is_within_distance(pol_sf, pts_app_snap, dist = 0.00015)
+    tocadas_app_sf <- pol_sf[lengths(idx_app) > 0, ]
+    if(nrow(tocadas_app_sf) > 0) area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
+  }
+  
+  # MANZANAS COMPARTIDAS (INTERSECCION GPS + APP)
+  area_manzanas_compartidas_m2 <- 0
+  if(!is.null(tocadas_gps_sf) && !is.null(tocadas_app_sf) && nrow(tocadas_gps_sf) > 0 && nrow(tocadas_app_sf) > 0) {
+    manzanas_compartidas_sf <- st_intersection(tocadas_gps_sf, tocadas_app_sf)
+    if(nrow(manzanas_compartidas_sf) > 0) {
+      area_manzanas_compartidas_m2 <- sum(as.numeric(st_area(manzanas_compartidas_sf)))
+    }
+  }
+}))
 
 # =======================================================
 # F. INTERFAZ DE USUARIO Y SERVIDOR (SHINY)
@@ -355,7 +416,7 @@ ui <- bootstrapPage(
                             condition = "input.ver_app_snap == true",
                             div(style="background-color:#f5f5f5; padding:10px; border-radius:5px;",
                                 h6("Agrupamiento Espacial"),
-                                sliderInput("radio_agrupar", "Distancia Maxima (m):", min = 0, max = 50, value = 0, step = 5),
+                                sliderInput("radio_agrupar", "Distancia Maxima (m):", min = 0, max = 1000, value = 0, step = 10),
                                 sliderInput("puntos_agrupar", "Puntos Maximos:", min = 2, max = 15, value = 5, step = 1)
                             )
                           ),
@@ -388,19 +449,23 @@ ui <- bootstrapPage(
                                      p(HTML(paste("<b>Total Perros:</b>", total_perros_casa))),
                                      p(HTML(paste("<b>Total Perros Vacunados 2024:</b>", total_fijo))),
                                      p(HTML(paste("<b>Total Perros Vacunados en Barrido:</b>", total_barrido))),
-                                     p(HTML(paste("<b>Velocidad que tenian los GPS:</b>", round(vel_promedio_trabajador, 2), "m/s")))
+                                     hr(),
+                                     h5("Velocidad GPS Promedio por Equipo:"),
+                                     HTML(paste0("<ul>", paste0("<li>Equipo ", velocidades_por_grupo$TRACK_ID, ": <b>", velocidades_por_grupo$vel_promedio, " m/s</b></li>", collapse = ""), "</ul>"))
                                    ),
                                    wellPanel(
                                      h4("Analisis Espacial"),
-                                     p(HTML(paste("<b>Area GPS (Punto a Punto):</b>", round(area_gps_exacta_m2, 2), "m2"))),
-                                     p(HTML(paste("<b>Area App (Punto a Punto):</b>", round(area_app_exacta_m2, 2), "m2"))),
-                                     p(HTML(paste("<b>Area GPS (Por Manzanas):</b>", round(area_manzanas_gps_m2, 2), "m2"))),
-                                     p(HTML(paste("<b>Area App (Por Manzanas):</b>", round(area_manzanas_app_m2, 2), "m2")))
+                                     p(HTML(paste("<b>Area GPS (Punto a Punto):</b>", round(area_gps_exacta_m2, 2), "m²"))),
+                                     p(HTML(paste("<b>Area App (Punto a Punto):</b>", round(area_app_exacta_m2, 2), "m²"))),
+                                     hr(),
+                                     p(HTML(paste("<b>Area GPS (Por Manzanas):</b>", round(area_manzanas_gps_m2, 2), "m²"))),
+                                     p(HTML(paste("<b>Area App (Por Manzanas):</b>", round(area_manzanas_app_m2, 2), "m²"))),
+                                     p(HTML(paste("<span style='color:#751dc3; font-size:16px;'><b>Manzanas Compartidas (App + GPS):</b> ", round(area_manzanas_compartidas_m2, 2), "m²</span>")))
                                    )
                             ),
                             column(8,
                                    wellPanel(
-                                     h4("Picos de Produccion"),
+                                     h4("Picos de Produccion (Solo Vacunacion)"),
                                      plotlyOutput("grafico_horarios", height = "400px")
                                    )
                             )
@@ -413,14 +478,14 @@ ui <- bootstrapPage(
 server <- function(input, output, session) {
   
   if (nrow(df_gps_validos) > 0) {
-    paleta_gradiente_gps <- colorFactor(palette = "Set1", domain = df_gps_validos$TRACK_ID)
+    paleta_rutas <- colorFactor(palette = "Set1", domain = df_gps_validos$TRACK_ID)
   }
   
   output$grafico_horarios <- renderPlotly({
     if(nrow(df_grafico) > 0){
       p <- ggplot(df_grafico, aes(x = hora_dia, y = Total, fill = Tipo, text = paste("Hora:", hora_dia, "<br>Categoria:", Tipo, "<br>Cantidad:", Total))) +
         geom_col(position = "dodge", color = "black", alpha = 0.8) +
-        scale_fill_manual(values = c("Punto Fijo" = "#1f77b4", "Barrido" = "#e68102", "Puntos GPS" = "#751dc3")) +
+        scale_fill_manual(values = c("Punto Fijo" = "#1f77b4", "Barrido" = "#e68102")) +
         theme_minimal() +
         labs(x = "Hora", y = "Cantidad") +
         theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -432,7 +497,7 @@ server <- function(input, output, session) {
   
   output$tabla_auditoria <- renderDT({
     datatable(df_gps_ruido %>% 
-                mutate(Hora_Local = format(TIME_FORMAT, "%Y-%m-%d %H:%M:%S", tz="America/Lima"),
+                mutate(Hora_Local = format(TIME_FORMAT, "%Y-%m-%d %I:%M:%S %p", tz="America/Lima"),
                        Vel = round(velocidad_ms, 2), Salto_m = round(distancia_m, 2),
                        Motivo = paste0("> 3 m/s (", Vel, " m/s)")) %>%
                 select(Hora_Local, Salto_m, Vel, Motivo),
@@ -470,11 +535,11 @@ server <- function(input, output, session) {
       )
       
       for(tid in unique(df_gps_validos$TRACK_ID)) {
-        t_data <- df_gps_validos %>% filter(TRACK_ID == tid)
+        t_data <- df_gps_validos %>% filter(TRACK_ID == tid) %>% arrange(orden_relativo)
         if(nrow(t_data) > 1) {
           m <- m %>% addPolylines(
             data = t_data, lng = ~LONG, lat = ~LAT,
-            color = ~paleta_gradiente_gps(TRACK_ID), weight = 3, opacity = 0.8, group = "C_GPS_Snap"
+            color = ~paleta_rutas(TRACK_ID), weight = 3, opacity = 0.8, group = "C_GPS_Snap"
           )
         }
       }
@@ -488,11 +553,15 @@ server <- function(input, output, session) {
       
       m <- m %>% addCircleMarkers(
         data = df_gps_validos, lng = ~LONG, lat = ~LAT,
-        radius = 3.5, fillColor = ~paleta_gradiente_gps(TRACK_ID), color = "black", weight = 0.5, fillOpacity = 1, group = "C_GPS_Snap", 
+        radius = 3.5, fillColor = ~paleta_rutas(TRACK_ID), color = "black", weight = 0.5, fillOpacity = 1, group = "C_GPS_Snap", 
         popup = ~paste("<b>Ruta Grupo N°:</b>", TRACK_ID, 
-                       "<br><b>Hora:</b>", format(TIME_FORMAT, "%H:%M:%S", tz="America/Lima"), 
-                       "<br><b>Velocidad:</b>", round(velocidad_ms, 2), "m/s")
-      ) %>% addLegend(position = "bottomright", pal = paleta_gradiente_gps, values = df_gps_validos$TRACK_ID, title = "Rutas de GPS", opacity = 1)
+                       "<br><b>Orden Relativo:</b>", orden_relativo,
+                       "<br><b>Día:</b>", format(TIME_FORMAT, "%Y-%m-%d", tz="America/Lima"), 
+                       "<br><b>Hora (Perú):</b>", format(TIME_FORMAT, "%I:%M:%S %p", tz="America/Lima"), 
+                       "<br><b>Velocidad Previa:</b>", round(velocidad_ms, 2), "m/s",
+                       "<br><b>Ajuste Vereda:</b>", round(dist_ajuste_m, 2), "m",
+                       "<br><b>Pertenece a la manzana:</b>", toca_manzana)
+      ) %>% addLegend(position = "bottomright", pal = paleta_rutas, values = df_gps_validos$TRACK_ID, title = "Equipos GPS", opacity = 1)
     }
     
     if (nrow(df_gps_ruido) > 0) {
@@ -511,10 +580,18 @@ server <- function(input, output, session) {
       )
     }
     
-    if (!is.null(coords_gps_closed)) m <- m %>% addPolygons(lng = coords_gps_closed[,1], lat = coords_gps_closed[,2], fillColor = "#751dc3", fillOpacity = 0.2, color = "#751dc3", weight = 2, dashArray = "4,4", group = "C_Area_GPS")
+    if (length(poligonos_gps_lista) > 0) {
+      for(hull in poligonos_gps_lista) {
+        m <- m %>% addPolygons(data = hull, fillColor = "#751dc3", fillOpacity = 0.2, color = "#751dc3", weight = 2, dashArray = "4,4", group = "C_Area_GPS")
+      }
+    }
     if (!is.null(tocadas_gps_sf) && nrow(tocadas_gps_sf) > 0) m <- m %>% addPolygons(data = tocadas_gps_sf, fillColor = "#751dc3", fillOpacity = 0.3, color = "#444444", weight = 1.5, group = "C_Area_GPS_Mz")
     
-    if (!is.null(coords_app_closed)) m <- m %>% addPolygons(lng = coords_app_closed[,1], lat = coords_app_closed[,2], fillColor = "#e68102", fillOpacity = 0.2, color = "#e68102", weight = 2, dashArray = "4,4", group = "C_Area_App")
+    if (length(poligonos_app_lista) > 0) {
+      for(hull in poligonos_app_lista) {
+        m <- m %>% addPolygons(data = hull, fillColor = "#e68102", fillOpacity = 0.2, color = "#e68102", weight = 2, dashArray = "4,4", group = "C_Area_App")
+      }
+    }
     if (!is.null(tocadas_app_sf) && nrow(tocadas_app_sf) > 0) m <- m %>% addPolygons(data = tocadas_app_sf, fillColor = "#e68102", fillOpacity = 0.3, color = "#444444", weight = 1.5, group = "C_Area_App_Mz")
     
     m
@@ -550,9 +627,11 @@ server <- function(input, output, session) {
           radius = 5, fillColor = "#e68102", color = "white", weight = 1, fillOpacity = 1, group = "C_App_Snap", 
           popup = ~paste("<b>👤 Usuario:</b>", user_std,
                          "<br><b>🏠 Tipo:</b>", type_house_std,
-                         "<br><b>🕒 Hora:</b>", format(date_clean, "%H:%M:%S", tz="America/Lima"), 
+                         "<br><b>📅 Día:</b>", format(date_clean, "%Y-%m-%d", tz="America/Lima"), 
+                         "<br><b>🕒 Hora:</b>", format(date_clean, "%I:%M:%S %p", tz="America/Lima"), 
                          "<br><b>🏃 Velocidad Previa:</b>", round(velocidad_ms, 2), "m/s",
-                         "<br><b>📍 Ajuste a Calle:</b>", round(dist_ajuste_m, 1), "m")
+                         "<br><b>📍 Ajuste a Calle:</b>", round(dist_ajuste_m, 1), "m",
+                         "<br><b>Pertenece a la manzana:</b>", toca_manzana)
         )
       } else {
         proxy %>% addCircleMarkers(
@@ -560,7 +639,9 @@ server <- function(input, output, session) {
           radius = ~ifelse(Puntos_Agrupados == 1, 5, 6 + Puntos_Agrupados), 
           fillColor = ~ifelse(Puntos_Agrupados == 1, "#e68102", "#b35900"), color = "white", weight = 2, fillOpacity = 0.9, group = "C_App_Snap", 
           popup = ~paste("<b>🎯 Grupo Espacial</b>",
-                         "<br><b>Horas:</b>", format(Hora_Inicio, "%H:%M:%S", tz="America/Lima"), "-", format(Hora_Fin, "%H:%M:%S", tz="America/Lima"),
+                         "<br><b>👤 Usuario:</b>", user_std,
+                         "<br><b>📅 Día:</b>", format(Hora_Inicio, "%Y-%m-%d", tz="America/Lima"), 
+                         "<br><b>🕒 Rango Horas:</b>", format(Hora_Inicio, "%I:%M:%S %p", tz="America/Lima"), "-", format(Hora_Fin, "%I:%M:%S %p", tz="America/Lima"),
                          "<br><b>Total Perros Habitantes:</b>", Total_Perros_Habitantes, 
                          "<br><b>Vacunados P. Fijo:</b>", Vacunados_Fijo,
                          "<br><b>Vacunados Barrido:</b>", Vacunados_Barrido,

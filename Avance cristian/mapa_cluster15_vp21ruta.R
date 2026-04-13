@@ -57,19 +57,27 @@ procesar_manzanas <- function(ruta_csv) {
            st_make_valid()) 
 }
 
-# SACAR A LA CALLE (SNAPPING) - Modificado para guardar la distancia original
+# SACAR A LA CALLE (SNAPPING) - MEJORADO PARA VALIDACION ESTRICTA DE MANZANA
 sacar_a_la_calle <- function(df, lon_col, lat_col, poligonos) {
   df$Ubicacion <- "En la calle (Original)" 
   df$lon_orig <- df[[lon_col]]
   df$lat_orig <- df[[lat_col]]
   df$dist_ajuste_m <- 0
+  # Añadimos la columna para saber si esta < 1m de una manzana real (distancia real en grados ~0.00001)
+  df$toca_manzana <- "NO" 
   
   if(is.null(poligonos) || nrow(poligonos) == 0 || nrow(df) == 0) return(df)
   
   pts <- st_as_sf(df, coords = c(lon_col, lat_col), crs = 4326)
   intersecciones <- st_intersects(pts, poligonos)
+  # Identifica todos los puntos que esten a menos de 1 metro (0.00001 grados aprox) del poligono
+  toque_estricto <- st_is_within_distance(pts, poligonos, dist = 0.00001)
   
   for(i in seq_len(nrow(df))) {
+    if(length(toque_estricto[[i]]) > 0) {
+      df$toca_manzana[i] <- "SÍ"
+    }
+    
     if(length(intersecciones[[i]]) > 0) {
       block_idx <- intersecciones[[i]][1]
       borde <- st_cast(poligonos[block_idx, ], "MULTILINESTRING")
@@ -180,11 +188,25 @@ df_app_vp21 <- df_app_raw %>%
   filter(!is.na(date_clean) & as.Date(date_clean, tz="America/Lima") == as.Date("2025-06-22")) %>%
   filter(!is.na(long) & !is.na(lat) & long != 0 & lat != 0) %>% 
   arrange(date_clean) %>%
-  mutate(orden_vacunacion = row_number(), hora_dia = format(date_clean, "%H:00"))
+  mutate(
+    orden_vacunacion = row_number(), 
+    hora_dia = format(date_clean, "%H:00"),
+    lon_ant = lag(long),
+    lat_ant = lag(lat),
+    tiempo_ant = lag(date_clean)
+  ) %>%
+  mutate(
+    distancia_m_app = mapply(function(lo1, la1, lo2, la2) {
+      if(is.na(lo1) || is.na(la1)) return(0)
+      calcular_distancia(lo1, la1, lo2, la2)
+    }, lon_ant, lat_ant, long, lat),
+    delta_t_app = as.numeric(difftime(date_clean, tiempo_ant, units="secs")),
+    velocidad_ms = ifelse(!is.na(delta_t_app) & delta_t_app > 0, distancia_m_app / delta_t_app, 0)
+  )
 
 attr(df_app_vp21$date_clean, "tzone") <- "America/Lima"
 
-# Métricas Básicas App (Ahora total_app_crudo refleja la ruta real completa)
+# Métricas Básicas App 
 total_app_crudo <- nrow(df_app_vp21)
 total_perros_casa <- sum(df_app_vp21$n_dog_house, na.rm = TRUE)
 total_fijo <- sum(df_app_vp21$v_2024, na.rm = TRUE)
@@ -195,10 +217,10 @@ total_casas_utiles <- sum(df_app_vp21$type_house_std %in% c("P", "DOG_ANOTHER_AR
 promedio_perros <- ifelse(total_casas_utiles > 0, total_perros_vacunados / total_casas_utiles, 0)
 tiempo_app_horas <- as.numeric(difftime(max(df_app_vp21$date_clean), min(df_app_vp21$date_clean), units="hours"))
 
-# Consolidacion Grafico
-df_grafico_fijo <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_2024, na.rm = TRUE)) %>% mutate(Tipo = "Punto Fijo")
+# Consolidacion Grafico (INYECCION: Quitamos el GPS de este grafico, solo 2 parametros)
+df_grafico_fijo <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_2024, na.rm = TRUE)) %>% mutate(Tipo = "Independientemente")
 df_grafico_barrido <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_sweep, na.rm = TRUE)) %>% mutate(Tipo = "Barrido")
-
+df_grafico <- bind_rows(df_grafico_fijo, df_grafico_barrido)
 
 # =======================================================
 # D. ETL 2: RUTAS GPS (KML)
@@ -248,9 +270,6 @@ df_gps_validos <- df_gps_raw %>% filter(ESTADO == "OK") %>% mutate(orden_rutina 
 df_gps_ruido <- df_gps_raw %>% filter(ESTADO == "RUIDO")
 vel_promedio_trabajador <- mean(df_gps_validos$velocidad_ms[df_gps_validos$velocidad_ms > 0], na.rm = TRUE)
 
-df_grafico_gps <- df_gps_validos %>% mutate(hora_dia = format(TIME_FORMAT, "%H:00")) %>% group_by(hora_dia) %>% summarise(Total = n()) %>% mutate(Tipo = "Puntos GPS")
-df_grafico <- bind_rows(df_grafico_fijo, df_grafico_barrido, df_grafico_gps)
-
 # =======================================================
 # E. ETL 3: CATASTRO Y SNAPPING
 # =======================================================
@@ -264,7 +283,7 @@ if(!is.null(pol_sf)) {
   pol_sf <- st_intersection(pol_sf, st_as_sfc(bbox_filtro))
 }
 
-# Aplicar Snapping (Guarda orig y nuevo)
+# Aplicar Snapping 
 df_app_vp21 <- sacar_a_la_calle(df_app_vp21, "long", "lat", pol_sf)
 df_gps_validos <- sacar_a_la_calle(df_gps_validos, "LONG", "LAT", pol_sf)
 
@@ -288,19 +307,29 @@ if(nrow(df_app_vp21) >= 3) {
   area_app_exacta_m2 <- sum(as.numeric(st_area(st_make_valid(st_sfc(st_polygon(list(coords_app_closed)), crs = 4326)))))
 }
 
-# Calcular Áreas (Metros Cuadrados por Manzanas Abarcadas)
+# INYECCION: Calcular Áreas con mejor aproximación (~15 metros de rango) y área de coincidencia
 area_manzanas_gps_m2 <- 0; tocadas_gps_sf <- NULL
 if(!is.null(pol_sf) && nrow(df_gps_validos) > 0) {
   pts_gps_orig <- st_as_sf(df_gps_validos, coords = c("LONG", "LAT"), crs = 4326)
-  tocadas_gps_sf <- pol_sf[lengths(st_intersects(pol_sf, pts_gps_orig)) > 0, ]
-  area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
+  idx_gps <- st_is_within_distance(pol_sf, pts_gps_orig, dist = 0.00015) 
+  tocadas_gps_sf <- pol_sf[lengths(idx_gps) > 0, ]
+  if(nrow(tocadas_gps_sf) > 0) area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
 }
 
 area_manzanas_app_m2 <- 0; tocadas_app_sf <- NULL
 if(!is.null(pol_sf) && nrow(df_app_vp21) > 0) {
   pts_app_orig <- st_as_sf(df_app_vp21, coords = c("long", "lat"), crs = 4326)
-  tocadas_app_sf <- pol_sf[lengths(st_intersects(pol_sf, pts_app_orig)) > 0, ]
-  area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
+  idx_app <- st_is_within_distance(pol_sf, pts_app_orig, dist = 0.00015)
+  tocadas_app_sf <- pol_sf[lengths(idx_app) > 0, ]
+  if(nrow(tocadas_app_sf) > 0) area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
+}
+
+area_manzanas_compartidas_m2 <- 0
+if(!is.null(tocadas_gps_sf) && !is.null(tocadas_app_sf) && nrow(tocadas_gps_sf) > 0 && nrow(tocadas_app_sf) > 0) {
+  manzanas_compartidas_sf <- st_intersection(tocadas_gps_sf, tocadas_app_sf)
+  if(nrow(manzanas_compartidas_sf) > 0) {
+    area_manzanas_compartidas_m2 <- sum(as.numeric(st_area(manzanas_compartidas_sf)))
+  }
 }
 
 # =======================================================
@@ -384,11 +413,12 @@ ui <- bootstrapPage(
                                      p(HTML(paste("<b style='color:#e68102;'>Área App (Punto a Punto):</b>", round(area_app_exacta_m2, 2), "m²"))),
                                      p(HTML(paste("<b style='color:#751dc3;'>Área GPS (Por Manzanas):</b>", round(area_manzanas_gps_m2, 2), "m²"))),
                                      p(HTML(paste("<b style='color:#e68102;'>Área App (Por Manzanas):</b>", round(area_manzanas_app_m2, 2), "m²"))),
+                                     p(HTML(paste("<b style='color:blue;'>Área Compartida (App + GPS):</b>", round(area_manzanas_compartidas_m2, 2), "m²")))
                                    )
                             ),
                             column(8,
                                    wellPanel(
-                                     h4(" Picos de Producción (App vs GPS)"),
+                                     h4(" Picos de Producción (Solo Vacunación)"),
                                      plotlyOutput("grafico_horarios", height = "400px")
                                    )
                             )
@@ -408,7 +438,7 @@ server <- function(input, output, session) {
     if(nrow(df_grafico) > 0){
       p <- ggplot(df_grafico, aes(x = hora_dia, y = Total, fill = Tipo, text = paste("Hora:", hora_dia, "<br>Categoría:", Tipo, "<br>Cantidad:", Total))) +
         geom_col(position = "dodge", color = "black", alpha = 0.8) +
-        scale_fill_manual(values = c("Punto Fijo" = "#1f77b4", "Barrido" = "#e68102", "Puntos GPS" = "#751dc3")) +
+        scale_fill_manual(values = c("Independientemente" = "#1f77b4", "Barrido" = "#e68102")) +
         theme_minimal() +
         labs(x = "Hora del Día", y = "Cantidad") +
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
@@ -476,7 +506,12 @@ server <- function(input, output, session) {
       m <- m %>% addCircleMarkers(
         data = df_gps_validos, lng = ~LONG, lat = ~LAT,
         radius = 3.5, fillColor = ~paleta_gradiente_gps(orden_rutina), color = "black", weight = 0.5, fillOpacity = 1, group = "C_GPS_Snap", 
-        popup = ~paste("<b>Paso #</b>", orden_rutina, "<br><b>Hora:</b>", format(TIME_FORMAT, "%H:%M:%S"), "<br><b>Desplazado a calle:</b>", round(dist_ajuste_m, 2), "m")
+        # INYECCION: Velocidad y validación de manzana en el GPS
+        popup = ~paste("<b>Paso #</b>", orden_rutina, 
+                       "<br><b>Hora:</b>", format(TIME_FORMAT, "%H:%M:%S"), 
+                       "<br><b>Velocidad:</b>", round(velocidad_ms, 2), "m/s",
+                       "<br><b>Desplazado a calle:</b>", round(dist_ajuste_m, 2), "m",
+                       "<br><b>Pertenece a la manzana:</b>", toca_manzana)
       ) %>% addLegend(position = "bottomright", pal = paleta_gradiente_gps, values = df_gps_validos$orden_rutina, title = "Ruta GPS (M->V)", opacity = 1)
     }
     
@@ -547,7 +582,12 @@ server <- function(input, output, session) {
         proxy %>% addCircleMarkers(
           data = df_dinamico, lng = ~long, lat = ~lat,
           radius = 5, fillColor = "#e68102", color = "white", weight = 1, fillOpacity = 1, group = "C_App_Snap", 
-          popup = ~paste("<b>💉 Encuesta #</b>", orden_vacunacion, "<br><b>Hora:</b>", format(date_clean, "%H:%M:%S"), "<br><b>Ajuste Vereda:</b>", round(dist_ajuste_m, 1), "m")
+          # INYECCION: Velocidad y validación de manzana en el Popup de la APP
+          popup = ~paste("<b>💉 Encuesta #</b>", orden_vacunacion, 
+                         "<br><b>Hora:</b>", format(date_clean, "%H:%M:%S"), 
+                         "<br><b>Velocidad Previa:</b>", round(velocidad_ms, 2), "m/s",
+                         "<br><b>Ajuste Vereda:</b>", round(dist_ajuste_m, 1), "m",
+                         "<br><b>Pertenece a la manzana:</b>", toca_manzana)
         )
       } else {
         # Agrupados (Bolas grandes)
