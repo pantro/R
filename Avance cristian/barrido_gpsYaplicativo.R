@@ -132,6 +132,7 @@ sacar_a_la_calle <- function(df, lon_col, lat_col, poligonos, tolerancia_metros 
         } else {
           df$estaba_dentro[i] <- FALSE
           df$dist_a_manzana_m[i] <- dist_m
+          # CORRECCIÓN VITAL: Si está a menos de la tolerancia, marcar como "SÍ"
           if(dist_m <= tolerancia_metros) {
             df$toca_manzana[i] <- "SÍ"
           } else {
@@ -600,6 +601,40 @@ ui <- bootstrapPage(
                             )
                           )
                       )
+             ),
+             
+             # === TAB PANEL: ANALIZAR DIAGRAMAS ===
+             tabPanel("Analizar diagramas",
+                      div(style="padding: 20px;",
+                          h3("Progreso de Vacunación por Encuestador (Barrido)"),
+                          p("Puntos de vacunación registrados por hora. El tamaño del punto representa la cantidad de perros vacunados."),
+                          plotlyOutput("grafico_puntos_usuario", height = "600px")
+                      )
+             ),
+             
+             # === NUEVA PESTAÑA: HORAS TRABAJADAS ===
+             tabPanel("Horas Trabajadas",
+                      div(style="padding: 20px;",
+                          h3("Tiempo Efectivo de Trabajo (GPS vs App)"),
+                          fluidRow(
+                            column(6,
+                                   wellPanel(
+                                     h4("⌚ Horas Trabajadas: Equipos GPS"),
+                                     plotlyOutput("grafico_horas_gps", height = "300px"),
+                                     hr(),
+                                     DTOutput("tabla_horas_gps")
+                                   )
+                            ),
+                            column(6,
+                                   wellPanel(
+                                     h4("📱 Horas Trabajadas: Encuestadores App"),
+                                     plotlyOutput("grafico_horas_app", height = "300px"),
+                                     hr(),
+                                     DTOutput("tabla_horas_app")
+                                   )
+                            )
+                          )
+                      )
              )
   )
 )
@@ -627,7 +662,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # TABLA DE LA APP (SIN EFICIENCIA)
   output$tabla_comparativa <- renderDT({
     req(nrow(df_app_vp21) > 0)
     
@@ -659,7 +693,6 @@ server <- function(input, output, session) {
                   fontWeight = styleEqual("TOTAL", "bold"))
   })
   
-  # TABLA DEL GPS (SOLO CON LOS DATOS DE PERROS VACUNADOS)
   output$tabla_comparativa_gps <- renderDT({
     req(nrow(df_vacunacion_gps_manual) > 0)
     
@@ -829,18 +862,20 @@ server <- function(input, output, session) {
           }
         }
         
+        # POPUP MODIFICADO: Muestra TODAS las características para cada X
         proxy %>% addCircleMarkers(
           data = df_dinamico, lng = ~long, lat = ~lat,
           radius = 6, color = "transparent", fillColor = "transparent", weight = 0, fillOpacity = 0.01, 
           group = "C_App_Snap", 
-          popup = ~paste0("Usuario: ", user_std,
-                          "<br>Tipo: ", type_house_std,
-                          "<br>Día: ", format(date_clean, "%Y-%m-%d"), 
-                          "<br>Hora: ", format(date_clean, "%I:%M:%S %p", tz="America/Lima"), 
-                          "<br>Velocidad Previa: ", round(velocidad_ms, 2), " m/s",
-                          ifelse(estaba_dentro, 
-                                 paste0("<br>Desplazado hacia afuera: ", round(dist_ajuste_m, 2), " m<br>Dentro de manzana: SÍ"), 
-                                 paste0("<br>Distancia a la manzana: ", round(dist_a_manzana_m, 2), " m<br>Dentro de manzana: ", toca_manzana)))
+          popup = ~paste0(
+            "<b>Usuario:</b> ", user_std,
+            "<br><b>Fecha:</b> ", format(date_clean, "%Y-%m-%d"), 
+            "<br><b>Hora:</b> ", format(date_clean, "%I:%M:%S %p", tz="America/Lima"), 
+            "<br><b>Velocidad vs punto anterior:</b> ", round(velocidad_ms, 2), " m/s",
+            ifelse(estaba_dentro, 
+                   paste0("<br><b>Incluido en manzana:</b> SÍ<br><b>Desplazado hacia afuera:</b> ", round(dist_ajuste_m, 2), " m"), 
+                   paste0("<br><b>Incluido en manzana:</b> ", toca_manzana, "<br><b>Distancia a manzana más cercana:</b> ", round(dist_a_manzana_m, 2), " m"))
+          )
         )
         
         etiquetas_x <- lapply(paleta_app(df_dinamico$user_std), function(col) {
@@ -872,6 +907,122 @@ server <- function(input, output, session) {
       }
     }
   })
+  
+  output$grafico_puntos_usuario <- renderPlotly({
+    req(nrow(df_app_vp21) > 0)
+    
+    df_puntos <- df_app_vp21 %>%
+      filter(v_sweep > 0) %>%
+      group_by(user_std, hora_dia) %>%
+      summarise(Vacunados = sum(v_sweep, na.rm = TRUE), .groups = "drop")
+    
+    df_totales <- df_puntos %>%
+      group_by(user_std) %>%
+      summarise(Total_Barrido = sum(Vacunados, na.rm = TRUE), .groups = "drop")
+    
+    df_plot <- df_puntos %>%
+      left_join(df_totales, by = "user_std") %>%
+      mutate(user_label = paste0(user_std, " | Total: ", Total_Barrido))
+    
+    p <- ggplot(df_plot, aes(x = hora_dia, y = user_label, size = Vacunados, color = user_std, 
+                             text = paste("Usuario:", user_std, "<br>Hora:", hora_dia, "<br>Perros Vacunados:", Vacunados))) +
+      geom_point(alpha = 0.7) +
+      scale_size_continuous(range = c(4, 15)) +
+      theme_minimal() +
+      labs(x = "Hora del Día", y = "Encuestador (Total)", title = "Puntos de Vacunación (Barrido) a lo largo del tiempo") +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none"
+      )
+    
+    ggplotly(p, tooltip = "text") %>% layout(hovermode = "closest")
+  })
+  
+  # =======================================================
+  # NUEVAS FUNCIONES: FORMATEO DE HORAS Y GRÁFICOS
+  # =======================================================
+  formatear_horas <- function(horas_decimales) {
+    if(is.na(horas_decimales)) return("0h 0min")
+    h <- floor(horas_decimales)
+    m <- round((horas_decimales - h) * 60)
+    
+    # CORRECCIÓN: Si los minutos se redondean a 60, sumar 1 hora y poner 0 minutos.
+    if(m == 60) {
+      h <- h + 1
+      m <- 0
+    }
+    
+    return(paste0(h, "h ", m, "min"))
+  }
+  
+  datos_horas_gps <- reactive({
+    req(nrow(df_gps_validos) > 0)
+    df_gps_validos %>%
+      group_by(`Ruta GPS` = TRACK_ID) %>%
+      summarise(
+        Inicio = min(TIME_FORMAT, na.rm = TRUE),
+        Fin = max(TIME_FORMAT, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        Horas_Dec = as.numeric(difftime(Fin, Inicio, units = "hours")),
+        # CORRECCIÓN: Aplicar vectorización segura para no saltarse datos
+        `Horas Trabajadas` = vapply(Horas_Dec, formatear_horas, FUN.VALUE = character(1)),
+        Inicio_str = format(Inicio, "%I:%M %p"),
+        Fin_str = format(Fin, "%I:%M %p")
+      ) %>%
+      arrange(desc(Horas_Dec))
+  })
+  
+  datos_horas_app <- reactive({
+    req(nrow(df_app_vp21) > 0)
+    df_app_vp21 %>%
+      group_by(`Usuario App` = user_std) %>%
+      summarise(
+        Inicio = min(date_clean, na.rm = TRUE),
+        Fin = max(date_clean, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        Horas_Dec = as.numeric(difftime(Fin, Inicio, units = "hours")),
+        # CORRECCIÓN: Aplicar vectorización segura para no saltarse datos
+        `Horas Trabajadas` = vapply(Horas_Dec, formatear_horas, FUN.VALUE = character(1)),
+        Inicio_str = format(Inicio, "%I:%M %p"),
+        Fin_str = format(Fin, "%I:%M %p")
+      ) %>%
+      arrange(desc(Horas_Dec))
+  })
+  
+  output$tabla_horas_gps <- renderDT({
+    datatable(datos_horas_gps() %>% select(`Ruta GPS`, Inicio = Inicio_str, Fin = Fin_str, `Horas Trabajadas`), 
+              options = list(pageLength = 5, dom = 't', scrollX = TRUE), rownames = FALSE, class = 'cell-border stripe hover')
+  })
+  
+  output$grafico_horas_gps <- renderPlotly({
+    df_hg <- datos_horas_gps()
+    req(nrow(df_hg) > 0)
+    p <- ggplot(df_hg, aes(x = reorder(`Ruta GPS`, Horas_Dec), y = Horas_Dec, fill = `Ruta GPS`,
+                           text = paste("Ruta:", `Ruta GPS`, "<br>Tiempo:", `Horas Trabajadas`, "<br>De", Inicio_str, "a", Fin_str))) +
+      geom_col() + coord_flip() + theme_minimal() + scale_fill_viridis_d() +
+      labs(x = "", y = "Horas Decimales") + theme(legend.position = "none")
+    ggplotly(p, tooltip = "text")
+  })
+  
+  output$tabla_horas_app <- renderDT({
+    datatable(datos_horas_app() %>% select(`Usuario App`, Inicio = Inicio_str, Fin = Fin_str, `Horas Trabajadas`), 
+              options = list(pageLength = 15, dom = 't', scrollX = TRUE), rownames = FALSE, class = 'cell-border stripe hover')
+  })
+  
+  output$grafico_horas_app <- renderPlotly({
+    df_ha <- datos_horas_app()
+    req(nrow(df_ha) > 0)
+    p <- ggplot(df_ha, aes(x = reorder(`Usuario App`, Horas_Dec), y = Horas_Dec, fill = `Usuario App`,
+                           text = paste("Usuario:", `Usuario App`, "<br>Tiempo:", `Horas Trabajadas`, "<br>De", Inicio_str, "a", Fin_str))) +
+      geom_col() + coord_flip() + theme_minimal() + scale_fill_viridis_d(option="plasma") +
+      labs(x = "", y = "Horas Decimales") + theme(legend.position = "none")
+    ggplotly(p, tooltip = "text")
+  })
+  
 }
 
 shinyApp(ui, server)
