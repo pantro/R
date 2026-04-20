@@ -1,6 +1,6 @@
 #######################################################---
 # SHINY APP: DASHBOARD FORENSE (CIUDAD DE DIOS 2024)
-# Análisis de Cluster 18 y 19 Unidos - App vs GPS
+# Análisis de Cluster 18 y 19 - App vs GPS
 #######################################################---
 rm(list = ls())
 options(warn = -1)
@@ -25,7 +25,7 @@ library(plotly)
 sf_use_s2(FALSE) 
 
 cat("==================================================\n")
-cat("🎯 INICIANDO DASHBOARD: CIUDAD DE DIOS (2024)...\n")
+cat("INICIANDO DASHBOARD: CIUDAD DE DIOS (2024)...\n")
 cat("==================================================\n")
 
 # =======================================================
@@ -41,7 +41,6 @@ calcular_distancia <- function(lon1, lat1, lon2, lat2) {
   return(6378137 * c) 
 }
 
-# LECTURA DE MANZANAS (Corrección: ID único por archivo para evitar colapso visual)
 procesar_manzanas <- function(ruta_csv) {
   if (!file.exists(ruta_csv)) return(NULL)
   pol_raw <- read.csv(ruta_csv, sep = ";", stringsAsFactors = FALSE)
@@ -56,7 +55,7 @@ procesar_manzanas <- function(ruta_csv) {
       mutate(
         lat_num = as.numeric(gsub(",", ".", lat_clean)), 
         long_num = as.numeric(gsub(",", ".", long_clean)),
-        poly_id = as.character(ident)
+        poly_id = paste0(basename(ruta_csv), "_", ident)
       ) %>%
       filter(!is.na(lat_num) & !is.na(long_num))
   } else {
@@ -80,42 +79,65 @@ procesar_manzanas <- function(ruta_csv) {
     st_as_sf(coords = c("long_num", "lat_num"), crs = 4326) %>%
     group_by(poly_id) %>% 
     filter(n() >= 3) %>% 
-    summarise(geometry = st_cast(st_combine(geometry), "POLYGON"), .groups = "drop") %>%
+    summarise(geometry = st_combine(geometry), .groups = "drop") %>%
+    st_cast("POLYGON") %>% 
     st_make_valid()
   
   return(pol_sf)
 }
 
-# SACAR A LA CALLE (SNAPPING) - Validación Matemática Estricta
-sacar_a_la_calle <- function(df, lon_col, lat_col, poligonos) {
+sacar_a_la_calle <- function(df, lon_col, lat_col, poligonos, tolerancia_metros = 3) {
   df$Ubicacion <- "En la calle (Original)" 
   df$lon_orig <- df[[lon_col]]
   df$lat_orig <- df[[lat_col]]
+  df$lon_snap <- df[[lon_col]]
+  df$lat_snap <- df[[lat_col]]
   df$dist_ajuste_m <- 0
+  df$dist_a_manzana_m <- 0 
   df$toca_manzana <- "NO" 
+  df$estaba_dentro <- FALSE
   
   if(is.null(poligonos) || nrow(poligonos) == 0 || nrow(df) == 0) return(df)
   
-  pts <- st_as_sf(df, coords = c(lon_col, lat_col), crs = 4326)
+  pts_sf <- st_as_sf(df, coords = c(lon_col, lat_col), crs = 4326) %>% st_transform(32719)
+  pol_proj <- st_transform(poligonos, 32719)
   
   suppressMessages(suppressWarnings({
-    intersecciones <- st_intersects(pts, poligonos)
-    bordes_poligonos <- st_cast(st_geometry(poligonos), "MULTILINESTRING")
+    intersecciones <- st_intersects(pts_sf, pol_proj)
+    bordes_poligonos <- st_cast(st_geometry(pol_proj), "MULTILINESTRING")
+    idx_nearest <- st_nearest_feature(pts_sf, pol_proj)
     
     for(i in seq_len(nrow(df))) {
-      pol_idx <- intersecciones[[i]]
+      is_inside <- length(intersecciones[[i]]) > 0
       
-      if(length(pol_idx) > 0) {
-        df$toca_manzana[i] <- "SÍ"
+      if(!is.na(idx_nearest[i])) {
+        borde <- bordes_poligonos[idx_nearest[i]]
+        linea <- st_nearest_points(pts_sf[i,], borde)
         
-        borde <- bordes_poligonos[pol_idx[1]]
-        linea <- st_nearest_points(pts[i,], borde)
-        coords <- st_coordinates(linea)
+        coords_proj_borde <- st_coordinates(linea)[2, c("X", "Y")]
+        pt_borde_sf <- st_sfc(st_point(coords_proj_borde), crs = 32719) %>% st_transform(4326)
+        coords_lonlat <- st_coordinates(pt_borde_sf)
         
-        df[i, lon_col] <- coords[2, "X"]
-        df[i, lat_col] <- coords[2, "Y"]
-        df$Ubicacion[i] <- "Ajustado a vereda"
-        df$dist_ajuste_m[i] <- calcular_distancia(df$lon_orig[i], df$lat_orig[i], coords[2, "X"], coords[2, "Y"])
+        dist_m <- calcular_distancia(df$lon_orig[i], df$lat_orig[i], coords_lonlat[1, "X"], coords_lonlat[1, "Y"])
+        
+        if(is_inside) {
+          df$estaba_dentro[i] <- TRUE
+          df$toca_manzana[i] <- "SÍ"
+          df[i, lon_col] <- coords_lonlat[1, "X"]
+          df[i, lat_col] <- coords_lonlat[1, "Y"]
+          df$lon_snap[i] <- coords_lonlat[1, "X"]
+          df$lat_snap[i] <- coords_lonlat[1, "Y"]
+          df$Ubicacion[i] <- "Ajustado a vereda"
+          df$dist_ajuste_m[i] <- dist_m
+        } else {
+          df$estaba_dentro[i] <- FALSE
+          df$dist_a_manzana_m[i] <- dist_m
+          if(dist_m <= tolerancia_metros) {
+            df$toca_manzana[i] <- "SÍ"
+          } else {
+            df$toca_manzana[i] <- "NO"
+          }
+        }
       }
     }
   }))
@@ -177,22 +199,20 @@ agrupar_puntos_secuencial <- function(df_puntos, radio_metros, max_puntos) {
 }
 
 # =======================================================
-# B. RUTAS EXACTAS (Carpeta Única: Ciudad de Dios 2024)
+# B. RUTAS EXACTAS
 # =======================================================
 ruta_base <- "D:/github_UPCH/R/R/data_vacunacion/2024/cuidad_dios"
-
 ruta_app_csv <- file.path(ruta_base, "cluster19_2024.csv")
-ruta_poligonos_csv <- file.path(ruta_base, "Loc_cluster_18_19_Unidos.csv")
 
 # =======================================================
-# C. ETL 1: CARGA DE RUTAS GPS MASIVAS (Busca cualquier .kml)
+# C. ETL 1: CARGA DE RUTAS GPS MASIVAS
 # =======================================================
 cat(">>> 1. Procesando Masivamente archivos GPS...\n")
 archivos_gps <- list.files(ruta_base, pattern = "\\.kml$", full.names = TRUE, ignore.case = TRUE)
 
 if(length(archivos_gps) == 0) {
-  cat("⚠️ Advertencia: No se encontraron archivos KML en", ruta_base, "\n")
-  df_gps_raw <- data.frame(TRACK_ID = integer(), TIME_FORMAT = as.POSIXct(character()), LONG = numeric(), LAT = numeric(), ESTADO = character(), velocidad_ms = numeric(), distancia_m = numeric())
+  cat("Advertencia: No se encontraron archivos KML en", ruta_base, "\n")
+  df_gps_raw <- data.frame(TRACK_ID = character(), TIME_FORMAT = as.POSIXct(character()), LONG = numeric(), LAT = numeric(), ESTADO = character(), velocidad_ms = numeric(), distancia_m = numeric())
   df_gps_validos <- df_gps_raw
   df_gps_ruido <- df_gps_raw
   vel_promedio_trabajador <- 0
@@ -200,12 +220,12 @@ if(length(archivos_gps) == 0) {
   velocidades_por_grupo <- data.frame()
 } else {
   lista_puntos_gps <- list()
-  track_id_counter <- 1
   
   for (archivo in archivos_gps) {
     kml_doc <- try(read_xml(archivo), silent = TRUE)
     if (inherits(kml_doc, "try-error")) next
     
+    nombre_real_gps <- gsub("\\.kml$", "", basename(archivo), ignore.case = TRUE)
     ns <- xml_ns(kml_doc)
     tramos <- xml_find_all(kml_doc, ".//gx:Track", ns)
     
@@ -216,13 +236,12 @@ if(length(archivos_gps) == 0) {
       if (length(tiempos_raw) == length(coords_raw) && length(coords_raw) > 0) {
         mat_coord <- do.call(rbind, strsplit(coords_raw, " "))
         lista_puntos_gps[[length(lista_puntos_gps) + 1]] <- data.frame(
-          TRACK_ID = track_id_counter,
+          TRACK_ID = nombre_real_gps, 
           TIME = tiempos_raw, 
           LONG = as.numeric(mat_coord[,1]), 
           LAT = as.numeric(mat_coord[,2]), 
           stringsAsFactors = FALSE
         )
-        track_id_counter <- track_id_counter + 1
       }
     }
   }
@@ -235,7 +254,6 @@ if(length(archivos_gps) == 0) {
   attr(df_gps_raw$TIME_FORMAT, "tzone") <- "America/Lima"
   total_gps_crudo <- nrow(df_gps_raw)
   
-  # Filtro de velocidad (> 3 m/s) para los GPS 
   UMBRAL_MS <- 3.0; TIEMPO_GRACIA_SEC <- 3600
   v_time <- as.numeric(df_gps_raw$TIME_FORMAT); v_lon <- df_gps_raw$LONG; v_lat <- df_gps_raw$LAT
   v_estado <- rep("OK", nrow(df_gps_raw)); v_vel <- rep(0, nrow(df_gps_raw)); v_dist <- rep(0, nrow(df_gps_raw))
@@ -255,7 +273,13 @@ if(length(archivos_gps) == 0) {
       vel_ms <- dist_m / delta_t
       v_vel[i] <- vel_ms; v_dist[i] <- dist_m
       
-      if (vel_ms > UMBRAL_MS) { v_estado[i] <- "RUIDO" } else { last_valid_idx <- i }
+      if (is.na(vel_ms) || is.nan(vel_ms)) {
+        v_estado[i] <- "RUIDO"
+      } else if (vel_ms > UMBRAL_MS) { 
+        v_estado[i] <- "RUIDO" 
+      } else { 
+        last_valid_idx <- i 
+      }
     }
   }
   df_gps_raw$velocidad_ms <- v_vel; df_gps_raw$distancia_m <- v_dist; df_gps_raw$ESTADO <- v_estado
@@ -280,7 +304,25 @@ if(length(archivos_gps) == 0) {
 }
 
 # =======================================================
-# D. ETL 2: CARGA DE APLICATIVO (CSV)
+# C.2 DATOS MANUALES DE RENDIMIENTO GPS
+# =======================================================
+df_vacunacion_gps_manual <- data.frame(
+  `Equipo GPS (Ruta)` = c(
+    "GPS-60 30-11-2024 GRUPO 01", 
+    "GPS-56 30-11-2024 GRUPO 03", 
+    "GPS-25 30-11-2024 GRUPO 04", 
+    "GPS-78 30-11-2024 GRUPO 06", 
+    "GPS-80 30-11-2024 GRUPO 07", 
+    "GPS-49 30-11-2024 GRUPO 08", 
+    "GPS-13 30-11-2024 GRUPO 09"
+  ),
+  `Perros_Vacunados_GPS` = c(62, 54, 55, 54, 38, 52, 66),
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+# =======================================================
+# D. ETL 2: CARGA DE APLICATIVO
 # =======================================================
 cat(">>> 2. Procesando App desde CSV...\n")
 if(!file.exists(ruta_app_csv)) stop(paste("Falta el archivo CSV en:", ruta_app_csv))
@@ -288,19 +330,30 @@ if(!file.exists(ruta_app_csv)) stop(paste("Falta el archivo CSV en:", ruta_app_c
 df_app_raw <- read.csv(ruta_app_csv, stringsAsFactors = FALSE)
 colnames(df_app_raw) <- tolower(colnames(df_app_raw))
 
-# Homologar nombres en caso varien
+col_usuario <- grep("user|usuario|vp", colnames(df_app_raw), value = TRUE)
+if(length(col_usuario) > 0) {
+  df_app_raw$user_app <- df_app_raw[[col_usuario[1]]]
+} else if ("username" %in% colnames(df_app_raw)) {
+  df_app_raw$user_app <- df_app_raw$username
+} else {
+  df_app_raw$user_app <- "Desconocido"
+}
+
 if(!"number_dog_house" %in% colnames(df_app_raw)) df_app_raw$number_dog_house <- 1
 if(!"number_dog_vaccinated_2024" %in% colnames(df_app_raw)) df_app_raw$number_dog_vaccinated_2024 <- 0
 if(!"number_dog_vaccinated_sweep" %in% colnames(df_app_raw)) df_app_raw$number_dog_vaccinated_sweep <- 0
 if(!"type_house" %in% colnames(df_app_raw)) df_app_raw$type_house <- "P"
 if(!"raise_dog_house" %in% colnames(df_app_raw)) df_app_raw$raise_dog_house <- "SI"
-if(!"user_app" %in% colnames(df_app_raw)) df_app_raw$user_app <- "Desconocido"
 
 df_app_vp21 <- df_app_raw %>%
+  mutate(
+    long = as.numeric(gsub(",", ".", as.character(long))),
+    lat = as.numeric(gsub(",", ".", as.character(lat)))
+  ) %>%
   filter(!is.na(long) & !is.na(lat)) %>%
   mutate(
-    # CORRECCIÓN DE HORA: Se lee directamente en "America/Lima" en lugar de "UTC" para evitar el salto a 3 AM
-    date_clean = if("date" %in% colnames(.)) as.POSIXct(as.character(date), format="%Y-%m-%dT%H:%M:%OS", tz="America/Lima") else as.POSIXct(date_clean, tz="America/Lima"),
+    date_str = as.character(if("date" %in% colnames(.)) date else date_clean),
+    date_clean = as.POSIXct(gsub("T", " ", substr(date_str, 1, 19)), tryFormats = c("%Y-%m-%d %H:%M:%OS", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M", "%Y-%m-%d"), tz="America/Lima"),
     n_dog_house = as.numeric(number_dog_house),
     v_2024 = as.numeric(number_dog_vaccinated_2024),
     v_sweep = as.numeric(number_dog_vaccinated_sweep),
@@ -313,6 +366,8 @@ df_app_vp21 <- df_app_raw %>%
     v_2024 = ifelse(is.na(v_2024), 0, v_2024),
     v_sweep = ifelse(is.na(v_sweep), 0, v_sweep)
   )
+
+df_app_vp21$date_clean[is.na(df_app_vp21$date_clean)] <- as.POSIXct(Sys.Date(), tz="America/Lima")
 
 attr(df_app_vp21$date_clean, "tzone") <- "America/Lima"
 
@@ -343,14 +398,15 @@ total_barrido <- sum(df_app_vp21$v_sweep, na.rm = TRUE)
 total_perros_vacunados <- total_fijo + total_barrido
 total_perros_casa <- sum(df_app_vp21$n_dog_house, na.rm = TRUE)
 
-df_grafico_fijo <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_2024, na.rm = TRUE)) %>% mutate(Tipo = "Punto Fijo")
-df_grafico_barrido <- df_app_vp21 %>% group_by(hora_dia) %>% summarise(Total = sum(v_sweep, na.rm = TRUE)) %>% mutate(Tipo = "Barrido")
-df_grafico <- bind_rows(df_grafico_fijo, df_grafico_barrido)
+df_grafico <- df_app_vp21 %>% 
+  group_by(hora_dia) %>% 
+  summarise(Total = sum(v_sweep, na.rm = TRUE)) %>% 
+  mutate(Tipo = "Barrido")
 
 # =======================================================
 # E. ETL 3: CATASTRO Y AREAS OPTIMIZADAS
 # =======================================================
-cat(">>> 3. Cargando Catastro...\n")
+cat(">>> 3. Cargando Catastro Dinámico...\n")
 archivos_poligonos <- list.files(ruta_base, pattern = "^Loc_.*\\.csv$", full.names = TRUE, ignore.case = TRUE)
 
 lista_poligonos <- list()
@@ -365,17 +421,18 @@ lon_rango <- range(c(df_app_vp21$long, df_gps_validos$LONG), na.rm = TRUE)
 lat_rango <- range(c(df_app_vp21$lat, df_gps_validos$LAT), na.rm = TRUE)
 bbox_valido <- all(is.finite(lon_rango)) && all(is.finite(lat_rango))
 
-cat(">>> Aplicando Snapping a Veredas...\n")
-df_app_vp21 <- sacar_a_la_calle(df_app_vp21, "long", "lat", pol_sf)
-if(nrow(df_gps_validos) > 0) df_gps_validos <- sacar_a_la_calle(df_gps_validos, "LONG", "LAT", pol_sf)
+cat(">>> Midiendo distancia de puntos a veredas...\n")
+df_app_vp21 <- sacar_a_la_calle(df_app_vp21, "long", "lat", pol_sf, tolerancia_metros = 3)
+
+if(nrow(df_gps_validos) > 0) {
+  df_gps_validos <- sacar_a_la_calle(df_gps_validos, "LONG", "LAT", pol_sf, tolerancia_metros = 3)
+}
 
 cat(">>> Calculando Areas de Impacto...\n")
 suppressMessages(suppressWarnings({
   
-  # Areas GPS
   area_gps_exacta_m2 <- 0
   poligonos_gps_lista <- list()
-  
   if(nrow(df_gps_validos) > 0) {
     for(tid in unique(df_gps_validos$TRACK_ID)) {
       t_data <- df_gps_validos %>% filter(TRACK_ID == tid)
@@ -388,10 +445,8 @@ suppressMessages(suppressWarnings({
     }
   }
   
-  # Areas App 
   area_app_exacta_m2 <- 0
   poligonos_app_lista <- list()
-  
   for(usu in unique(df_app_vp21$user_std)) {
     u_data <- df_app_vp21 %>% filter(user_std == usu)
     if(nrow(u_data) >= 3) {
@@ -402,30 +457,34 @@ suppressMessages(suppressWarnings({
     }
   }
   
-  # Areas Manzanas
   area_manzanas_gps_m2 <- 0; tocadas_gps_sf <- NULL
   if(!is.null(pol_sf) && nrow(df_gps_validos) > 0) {
-    pts_gps_snap <- st_as_sf(df_gps_validos, coords = c("LONG", "LAT"), crs = 4326)
-    intersecciones_gps <- st_intersects(pts_gps_snap, pol_sf)
-    idx_gps <- unique(unlist(intersecciones_gps))
-    if(length(idx_gps) > 0) {
-      tocadas_gps_sf <- pol_sf[idx_gps, ]
-      area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
+    df_gps_valido_area <- df_gps_validos %>% filter(toca_manzana == "SÍ")
+    if(nrow(df_gps_valido_area) > 0) {
+      pts_gps_snap <- st_as_sf(df_gps_valido_area, coords = c("lon_orig", "lat_orig"), crs = 4326) %>% st_transform(32719)
+      pol_proj <- st_transform(pol_sf, 32719)
+      idx_gps <- unique(unlist(st_is_within_distance(pts_gps_snap, pol_proj, dist = 3.5))) 
+      if(length(idx_gps) > 0) {
+        tocadas_gps_sf <- pol_sf[idx_gps, ]
+        area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
+      }
     }
   }
   
   area_manzanas_app_m2 <- 0; tocadas_app_sf <- NULL
   if(!is.null(pol_sf) && nrow(df_app_vp21) > 0) {
-    pts_app_snap <- st_as_sf(df_app_vp21, coords = c("long", "lat"), crs = 4326)
-    intersecciones_app <- st_intersects(pts_app_snap, pol_sf)
-    idx_app <- unique(unlist(intersecciones_app))
-    if(length(idx_app) > 0) {
-      tocadas_app_sf <- pol_sf[idx_app, ]
-      area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
+    df_app_valido_area <- df_app_vp21 %>% filter(toca_manzana == "SÍ")
+    if(nrow(df_app_valido_area) > 0) {
+      pts_app_snap <- st_as_sf(df_app_valido_area, coords = c("lon_orig", "lat_orig"), crs = 4326) %>% st_transform(32719)
+      pol_proj <- st_transform(pol_sf, 32719)
+      idx_app <- unique(unlist(st_is_within_distance(pts_app_snap, pol_proj, dist = 3.5)))
+      if(length(idx_app) > 0) {
+        tocadas_app_sf <- pol_sf[idx_app, ]
+        area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
+      }
     }
   }
   
-  # MANZANAS COMPARTIDAS
   area_manzanas_compartidas_m2 <- 0
   if(!is.null(tocadas_gps_sf) && !is.null(tocadas_app_sf) && nrow(tocadas_gps_sf) > 0 && nrow(tocadas_app_sf) > 0) {
     manzanas_compartidas_sf <- st_intersection(tocadas_gps_sf, tocadas_app_sf)
@@ -439,7 +498,8 @@ suppressMessages(suppressWarnings({
 # F. INTERFAZ DE USUARIO Y SERVIDOR (SHINY)
 # =======================================================
 ui <- bootstrapPage(
-  tags$style(type = "text/css", "html, body {width:100%;height:100%;margin:0;padding:0;}"),
+  tags$style(type = "text/css", "html, body {width:100%;height:100%;margin:0;padding:0;}
+              .dataTables_wrapper { font-size: 14px; }"),
   
   navbarPage("Auditoria de Campo", id = "main_nav",
              
@@ -503,11 +563,11 @@ ui <- bootstrapPage(
                                      h4("Desempeno de Campo"),
                                      p(HTML(paste("<b>Total de Casas (Toda la ruta):</b>", total_app_crudo))),
                                      p(HTML(paste("<b>Total Perros:</b>", total_perros_casa))),
-                                     p(HTML(paste("<b>Total Perros Vacunados 2024:</b>", total_fijo))),
+                                     p(HTML(paste("<b>Perros Vacunados Independientemente:</b>", total_fijo))),
                                      p(HTML(paste("<b>Total Perros Vacunados en Barrido:</b>", total_barrido))),
                                      hr(),
                                      h5("Velocidad GPS Promedio por Equipo:"),
-                                     if(nrow(velocidades_por_grupo) > 0) HTML(paste0("<ul>", paste0("<li>Equipo ", velocidades_por_grupo$TRACK_ID, ": <b>", velocidades_por_grupo$vel_promedio, " m/s</b></li>", collapse = ""), "</ul>")) else p("No hay GPS valido.")
+                                     if(nrow(velocidades_por_grupo) > 0) HTML(paste0("<ul>", paste0("<li><b>", velocidades_por_grupo$TRACK_ID, ":</b> ", velocidades_por_grupo$vel_promedio, " m/s</li>", collapse = ""), "</ul>")) else p("No hay GPS valido.")
                                    ),
                                    wellPanel(
                                      h4("Analisis Espacial"),
@@ -519,15 +579,23 @@ ui <- bootstrapPage(
                                      p(HTML(paste("<span style='color:#751dc3; font-size:16px;'><b>Manzanas Compartidas (App + GPS):</b> ", round(area_manzanas_compartidas_m2, 2), "m²</span>")))
                                    )
                             ),
-                            # CORRECCIÓN 2: Se agregó la tabla de comparativa de encuestadores debajo del gráfico
                             column(8,
                                    wellPanel(
                                      h4("Picos de Produccion (Solo Vacunacion)"),
                                      plotlyOutput("grafico_horarios", height = "350px")
                                    ),
                                    wellPanel(
-                                     h4("🏆 Rendimiento por Encuestador (Tiempo y Eficiencia)"),
-                                     DTOutput("tabla_comparativa")
+                                     h3("COMPARATIVA DE RENDIMIENTO: APP vs GPS", style = "text-align: center; margin-bottom: 20px; font-weight: bold;"),
+                                     fluidRow(
+                                       column(6,
+                                              h4("Rendimiento por Encuestador (APP)", style = "color: #e68102; border-bottom: 2px solid #e68102; padding-bottom: 5px;"),
+                                              DTOutput("tabla_comparativa")
+                                       ),
+                                       column(6,
+                                              h4("🛰️ Rendimiento por Equipo (GPS)", style = "color: #751dc3; border-bottom: 2px solid #751dc3; padding-bottom: 5px;"),
+                                              DTOutput("tabla_comparativa_gps")
+                                       )
+                                     )
                                    )
                             )
                           )
@@ -542,13 +610,16 @@ server <- function(input, output, session) {
     paleta_rutas <- colorFactor(palette = "Set1", domain = df_gps_validos$TRACK_ID)
   }
   
+  colores_hex <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#A65628", "#F781BF", "#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D", "#666666", "#000000", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#17becf", "#bcbd22")
+  paleta_app <- colorFactor(palette = colores_hex, domain = df_app_vp21$user_std)
+  
   output$grafico_horarios <- renderPlotly({
     if(nrow(df_grafico) > 0){
       p <- ggplot(df_grafico, aes(x = hora_dia, y = Total, fill = Tipo, text = paste("Hora:", hora_dia, "<br>Categoria:", Tipo, "<br>Cantidad:", Total))) +
         geom_col(position = "dodge", color = "black", alpha = 0.8) +
-        scale_fill_manual(values = c("Punto Fijo" = "#1f77b4", "Barrido" = "#e68102")) +
+        scale_fill_manual(values = c("Barrido" = "#e68102")) +
         theme_minimal() +
-        labs(x = "Hora", y = "Cantidad") +
+        labs(x = "Hora del Día", y = "Cantidad de Perros") +
         theme(axis.text.x = element_text(angle = 45, hjust = 1),
               legend.position = "top", legend.title = element_blank())
       
@@ -556,22 +627,60 @@ server <- function(input, output, session) {
     }
   })
   
-  # CÁLCULO DE LA TABLA DE RENDIMIENTO POR ENCUESTADOR
+  # TABLA DE LA APP (SIN EFICIENCIA)
   output$tabla_comparativa <- renderDT({
     req(nrow(df_app_vp21) > 0)
-    res <- df_app_vp21 %>%
+    
+    res_app <- df_app_vp21 %>%
       group_by(`Usuario` = user_std) %>%
       summarise(
         `Visitas (Casas)` = n(),
-        `Perros Vacunados` = sum(v_2024 + v_sweep, na.rm = TRUE),
-        `Tiempo (Horas)` = round(as.numeric(difftime(max(date_clean), min(date_clean), units="hours")), 2)
+        `Perros Vacunados APP` = sum(v_sweep, na.rm = TRUE)
       ) %>%
-      mutate(
-        `Eficiencia (Vac/Hora)` = ifelse(`Tiempo (Horas)` > 0, round(`Perros Vacunados` / `Tiempo (Horas)`, 1), 0)
-      ) %>%
-      arrange(desc(`Perros Vacunados`), `Tiempo (Horas)`)
+      arrange(desc(`Perros Vacunados APP`))
     
-    datatable(res, options = list(pageLength = 5, dom = 't', order = list(list(3, 'desc'))), rownames = FALSE)
+    res_app <- res_app %>% mutate(across(everything(), as.character))
+    total_visitas <- sum(as.numeric(res_app$`Visitas (Casas)`), na.rm = TRUE)
+    total_vacunados <- sum(as.numeric(res_app$`Perros Vacunados APP`), na.rm = TRUE)
+    
+    res_app <- bind_rows(res_app, data.frame(
+      `Usuario` = "TOTAL",
+      `Visitas (Casas)` = as.character(total_visitas),
+      `Perros Vacunados APP` = as.character(total_vacunados),
+      stringsAsFactors = FALSE, check.names = FALSE
+    ))
+    
+    datatable(res_app, 
+              options = list(pageLength = 15, dom = 't', scrollX = TRUE), 
+              rownames = FALSE, 
+              class = 'cell-border stripe hover') %>%
+      formatStyle('Usuario', target = 'row', 
+                  backgroundColor = styleEqual("TOTAL", "#f9f9f9"),
+                  fontWeight = styleEqual("TOTAL", "bold"))
+  })
+  
+  # TABLA DEL GPS (SOLO CON LOS DATOS DE PERROS VACUNADOS)
+  output$tabla_comparativa_gps <- renderDT({
+    req(nrow(df_vacunacion_gps_manual) > 0)
+    
+    res_gps <- df_vacunacion_gps_manual %>% arrange(desc(`Perros_Vacunados_GPS`))
+    
+    res_gps <- res_gps %>% mutate(across(everything(), as.character))
+    total_vacunados_gps <- sum(as.numeric(res_gps$`Perros_Vacunados_GPS`), na.rm = TRUE)
+    
+    res_gps <- bind_rows(res_gps, data.frame(
+      `Equipo GPS (Ruta)` = "TOTAL",
+      `Perros_Vacunados_GPS` = as.character(total_vacunados_gps),
+      stringsAsFactors = FALSE, check.names = FALSE
+    ))
+    
+    datatable(res_gps, 
+              options = list(pageLength = 15, dom = 't', scrollX = TRUE), 
+              rownames = FALSE, 
+              class = 'cell-border stripe hover') %>%
+      formatStyle('Equipo GPS (Ruta)', target = 'row', 
+                  backgroundColor = styleEqual("TOTAL", "#f9f9f9"),
+                  fontWeight = styleEqual("TOTAL", "bold"))
   })
   
   output$tabla_auditoria <- renderDT({
@@ -584,11 +693,17 @@ server <- function(input, output, session) {
               colnames = c("Hora Real (Peru)", "Salto (m)", "Velocidad (m/s)", "Razon"))
   })
   
+  df_app_reactivo <- reactive({
+    df <- df_app_vp21
+    df
+  })
+  
   datos_app_agrupados <- reactive({
+    df <- df_app_reactivo()
     if (input$radio_agrupar > 0) {
-      agrupar_puntos_secuencial(df_app_vp21, input$radio_agrupar, input$puntos_agrupar)
+      agrupar_puntos_secuencial(df, input$radio_agrupar, input$puntos_agrupar)
     } else {
-      df_app_vp21
+      df
     }
   })
   
@@ -624,7 +739,7 @@ server <- function(input, output, session) {
       }
       
       for(i in 1:nrow(df_gps_validos)) {
-        if(df_gps_validos$dist_ajuste_m[i] > 0) {
+        if(df_gps_validos$estaba_dentro[i]) {
           m <- m %>% addPolylines(lng = c(df_gps_validos$lon_orig[i], df_gps_validos$LONG[i]), lat = c(df_gps_validos$lat_orig[i], df_gps_validos$LAT[i]),
                                   color = "gray", weight = 1, dashArray = "3,3", group = "C_GPS_Snap")
         }
@@ -633,13 +748,14 @@ server <- function(input, output, session) {
       m <- m %>% addCircleMarkers(
         data = df_gps_validos, lng = ~LONG, lat = ~LAT,
         radius = 3.5, fillColor = ~paleta_rutas(TRACK_ID), color = "black", weight = 0.5, fillOpacity = 1, group = "C_GPS_Snap", 
-        popup = ~paste("<b>Ruta Grupo N°:</b>", TRACK_ID, 
+        popup = ~paste("<b>Ruta Grupo:</b>", TRACK_ID, 
                        "<br><b>Orden Relativo:</b>", orden_relativo,
                        "<br><b>Día:</b>", format(TIME_FORMAT, "%Y-%m-%d", tz="America/Lima"), 
                        "<br><b>Hora (Perú):</b>", format(TIME_FORMAT, "%I:%M:%S %p", tz="America/Lima"), 
                        "<br><b>Velocidad Previa:</b>", round(velocidad_ms, 2), "m/s",
-                       "<br><b>Arrastrado a Calle:</b>", round(dist_ajuste_m, 2), "m",
-                       "<br><b>Pertenece a la manzana:</b>", toca_manzana)
+                       ifelse(estaba_dentro, 
+                              paste0("<br><b>Desplazado hacia afuera:</b> ", round(dist_ajuste_m, 2), " m<br><b>Dentro de manzana:</b> SÍ"), 
+                              paste0("<br><b>Distancia a manzana:</b> ", round(dist_a_manzana_m, 2), " m<br><b>Dentro de manzana:</b> ", toca_manzana)))
       ) %>% addLegend(position = "bottomright", pal = paleta_rutas, values = df_gps_validos$TRACK_ID, title = "Equipos GPS", opacity = 1)
     }
     
@@ -695,32 +811,59 @@ server <- function(input, output, session) {
     
     if (input$ver_app_snap && nrow(df_dinamico) > 0) {
       if (input$radio_agrupar == 0) {
+        
+        for(usu in unique(df_dinamico$user_std)) {
+          u_data <- df_dinamico %>% filter(user_std == usu) %>% arrange(orden_vacunacion)
+          if(nrow(u_data) > 1) {
+            proxy %>% addPolylines(
+              data = u_data, lng = ~long, lat = ~lat,
+              color = paleta_app(usu), weight = 2, opacity = 0.8, group = "C_App_Snap"
+            )
+          }
+        }
+        
         for(i in 1:nrow(df_dinamico)) {
-          if(df_dinamico$dist_ajuste_m[i] > 0) {
+          if(df_dinamico$estaba_dentro[i]) {
             proxy %>% addPolylines(lng = c(df_dinamico$lon_orig[i], df_dinamico$long[i]), lat = c(df_dinamico$lat_orig[i], df_dinamico$lat[i]),
                                    color = "gray", weight = 1, dashArray = "3,3", group = "C_App_Snap")
           }
         }
+        
         proxy %>% addCircleMarkers(
           data = df_dinamico, lng = ~long, lat = ~lat,
-          radius = 5, fillColor = "#e68102", color = "white", weight = 1, fillOpacity = 1, group = "C_App_Snap", 
-          popup = ~paste("<b>👤 Usuario:</b>", user_std,
-                         "<br><b>🏠 Tipo:</b>", type_house_std,
-                         "<br><b>📅 Día:</b>", format(date_clean, "%Y-%m-%d", tz="America/Lima"), 
-                         "<br><b>🕒 Hora:</b>", format(date_clean, "%I:%M:%S %p", tz="America/Lima"), 
-                         "<br><b>🏃 Velocidad Previa:</b>", round(velocidad_ms, 2), "m/s",
-                         "<br><b>📍 Arrastrado a Calle:</b>", round(dist_ajuste_m, 1), "m",
-                         "<br><b>Pertenece a la manzana:</b>", toca_manzana)
+          radius = 6, color = "transparent", fillColor = "transparent", weight = 0, fillOpacity = 0.01, 
+          group = "C_App_Snap", 
+          popup = ~paste0("Usuario: ", user_std,
+                          "<br>Tipo: ", type_house_std,
+                          "<br>Día: ", format(date_clean, "%Y-%m-%d"), 
+                          "<br>Hora: ", format(date_clean, "%I:%M:%S %p", tz="America/Lima"), 
+                          "<br>Velocidad Previa: ", round(velocidad_ms, 2), " m/s",
+                          ifelse(estaba_dentro, 
+                                 paste0("<br>Desplazado hacia afuera: ", round(dist_ajuste_m, 2), " m<br>Dentro de manzana: SÍ"), 
+                                 paste0("<br>Distancia a la manzana: ", round(dist_a_manzana_m, 2), " m<br>Dentro de manzana: ", toca_manzana)))
         )
+        
+        etiquetas_x <- lapply(paleta_app(df_dinamico$user_std), function(col) {
+          htmltools::HTML(paste0('<div style="color:', col, '; font-size:14px; font-weight:bold; cursor:pointer; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;">✖</div>'))
+        })
+        
+        proxy %>% addLabelOnlyMarkers(
+          data = df_dinamico, lng = ~long, lat = ~lat,
+          label = etiquetas_x,
+          labelOptions = labelOptions(noHide = TRUE, direction = 'center', textOnly = TRUE, 
+                                      style = list("padding" = "0px", "background" = "transparent", "border" = "none")),
+          group = "C_App_Snap"
+        )
+        
       } else {
         proxy %>% addCircleMarkers(
           data = df_dinamico, lng = ~long, lat = ~lat,
           radius = ~ifelse(Puntos_Agrupados == 1, 5, 6 + Puntos_Agrupados), 
           fillColor = ~ifelse(Puntos_Agrupados == 1, "#e68102", "#b35900"), color = "white", weight = 2, fillOpacity = 0.9, group = "C_App_Snap", 
-          popup = ~paste("<b>🎯 Grupo Espacial</b>",
-                         "<br><b>👤 Usuario:</b>", user_std,
-                         "<br><b>📅 Día:</b>", format(Hora_Inicio, "%Y-%m-%d", tz="America/Lima"), 
-                         "<br><b>🕒 Rango Horas:</b>", format(Hora_Inicio, "%I:%M:%S %p", tz="America/Lima"), "-", format(Hora_Fin, "%I:%M:%S %p", tz="America/Lima"),
+          popup = ~paste("<b>Grupo Espacial</b>",
+                         "<br><b>Usuario:</b>", user_std,
+                         "<br><b>Día:</b>", format(Hora_Inicio, "%Y-%m-%d", tz="America/Lima"), 
+                         "<br><b>Rango Horas:</b>", format(Hora_Inicio, "%I:%M:%S %p", tz="America/Lima"), "-", format(Hora_Fin, "%I:%M:%S %p", tz="America/Lima"),
                          "<br><b>Total Perros Habitantes:</b>", Total_Perros_Habitantes, 
                          "<br><b>Vacunados P. Fijo:</b>", Vacunados_Fijo,
                          "<br><b>Vacunados Barrido:</b>", Vacunados_Barrido,
