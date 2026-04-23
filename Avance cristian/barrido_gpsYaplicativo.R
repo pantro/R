@@ -458,7 +458,7 @@ suppressMessages(suppressWarnings({
     }
   }
   
-  area_manzanas_gps_m2 <- 0; tocadas_gps_sf <- NULL
+  area_manzanas_gps_m2 <- 0; tocadas_gps_sf <- NULL; num_manzanas_gps <- 0 # <--- AÑADIDO
   if(!is.null(pol_sf) && nrow(df_gps_validos) > 0) {
     df_gps_valido_area <- df_gps_validos %>% filter(toca_manzana == "SÍ")
     if(nrow(df_gps_valido_area) > 0) {
@@ -468,11 +468,12 @@ suppressMessages(suppressWarnings({
       if(length(idx_gps) > 0) {
         tocadas_gps_sf <- pol_sf[idx_gps, ]
         area_manzanas_gps_m2 <- sum(as.numeric(st_area(tocadas_gps_sf)))
+        num_manzanas_gps <- nrow(tocadas_gps_sf) # <--- AÑADIDO
       }
     }
   }
   
-  area_manzanas_app_m2 <- 0; tocadas_app_sf <- NULL
+  area_manzanas_app_m2 <- 0; tocadas_app_sf <- NULL; num_manzanas_app <- 0 # <--- AÑADIDO
   if(!is.null(pol_sf) && nrow(df_app_vp21) > 0) {
     df_app_valido_area <- df_app_vp21 %>% filter(toca_manzana == "SÍ")
     if(nrow(df_app_valido_area) > 0) {
@@ -482,18 +483,65 @@ suppressMessages(suppressWarnings({
       if(length(idx_app) > 0) {
         tocadas_app_sf <- pol_sf[idx_app, ]
         area_manzanas_app_m2 <- sum(as.numeric(st_area(tocadas_app_sf)))
+        num_manzanas_app <- nrow(tocadas_app_sf) # <--- AÑADIDO
       }
     }
   }
   
-  area_manzanas_compartidas_m2 <- 0
+  area_manzanas_compartidas_m2 <- 0; num_manzanas_compartidas <- 0 # <--- AÑADIDO
   if(!is.null(tocadas_gps_sf) && !is.null(tocadas_app_sf) && nrow(tocadas_gps_sf) > 0 && nrow(tocadas_app_sf) > 0) {
     manzanas_compartidas_sf <- st_intersection(tocadas_gps_sf, tocadas_app_sf)
     if(nrow(manzanas_compartidas_sf) > 0) {
       area_manzanas_compartidas_m2 <- sum(as.numeric(st_area(manzanas_compartidas_sf)))
+      num_manzanas_compartidas <- length(intersect(tocadas_gps_sf$poly_id, tocadas_app_sf$poly_id)) # <--- AÑADIDO
     }
   }
 }))
+
+# =======================================================
+# NUEVO: CÁLCULO DE DISTANCIA LINEAL RECORRIDA (Post-Ajuste)
+# =======================================================
+cat(">>> Calculando Distancias Lineales Recorridas...\n")
+
+distancia_total_app_km <- 0
+promedio_dist_app_km <- 0
+if(nrow(df_app_vp21) > 0) {
+  df_app_vp21 <- df_app_vp21 %>%
+    arrange(user_std, date_clean) %>%
+    group_by(user_std) %>%
+    mutate(
+      long_ant_snap = lag(long),
+      lat_ant_snap = lag(lat),
+      dist_paso_app = mapply(function(lo1, la1, lo2, la2) {
+        if(is.na(lo1) || is.na(la1) || is.na(lo2) || is.na(la2)) return(0)
+        calcular_distancia(lo1, la1, lo2, la2)
+      }, long_ant_snap, lat_ant_snap, long, lat)
+    ) %>%
+    ungroup()
+  
+  distancia_total_app_km <- sum(df_app_vp21$dist_paso_app, na.rm = TRUE) / 1000
+  promedio_dist_app_km <- distancia_total_app_km / length(unique(df_app_vp21$user_std))
+}
+
+distancia_total_gps_km <- 0
+promedio_dist_gps_km <- 0
+if(nrow(df_gps_validos) > 0) {
+  df_gps_validos <- df_gps_validos %>%
+    arrange(TRACK_ID, TIME_FORMAT) %>%
+    group_by(TRACK_ID) %>%
+    mutate(
+      long_ant_snap = lag(LONG),
+      lat_ant_snap = lag(LAT),
+      dist_paso_gps = mapply(function(lo1, la1, lo2, la2) {
+        if(is.na(lo1) || is.na(la1) || is.na(lo2) || is.na(la2)) return(0)
+        calcular_distancia(lo1, la1, lo2, la2)
+      }, long_ant_snap, lat_ant_snap, LONG, LAT)
+    ) %>%
+    ungroup()
+  
+  distancia_total_gps_km <- sum(df_gps_validos$dist_paso_gps, na.rm = TRUE) / 1000
+  promedio_dist_gps_km <- distancia_total_gps_km / length(unique(df_gps_validos$TRACK_ID))
+}
 
 # =======================================================
 # F. INTERFAZ DE USUARIO Y SERVIDOR (SHINY)
@@ -575,9 +623,12 @@ ui <- bootstrapPage(
                                      p(HTML(paste("<b>Area GPS (Punto a Punto):</b>", round(area_gps_exacta_m2, 2), "m²"))),
                                      p(HTML(paste("<b>Area App (Punto a Punto):</b>", round(area_app_exacta_m2, 2), "m²"))),
                                      hr(),
-                                     p(HTML(paste("<b>Area GPS (Por Manzanas):</b>", round(area_manzanas_gps_m2, 2), "m²"))),
-                                     p(HTML(paste("<b>Area App (Por Manzanas):</b>", round(area_manzanas_app_m2, 2), "m²"))),
-                                     p(HTML(paste("<span style='color:#751dc3; font-size:16px;'><b>Manzanas Compartidas (App + GPS):</b> ", round(area_manzanas_compartidas_m2, 2), "m²</span>")))
+                                     p(HTML(paste("<b>Area GPS (Por Manzanas):</b>", round(area_manzanas_gps_m2, 2), "m² | <b>Cantidad:</b>", num_manzanas_gps, "manzanas"))),
+                                     p(HTML(paste("<b>Area App (Por Manzanas):</b>", round(area_manzanas_app_m2, 2), "m² | <b>Cantidad:</b>", num_manzanas_app, "manzanas"))),
+                                     p(HTML(paste("<span style='color:#751dc3; font-size:16px;'><b>Manzanas Compartidas (App + GPS):</b> ", round(area_manzanas_compartidas_m2, 2), "m² | <b>Cantidad:</b>", num_manzanas_compartidas, "manzanas</span>"))),
+                                     hr(), # <--- LÍNEAS NUEVAS A PARTIR DE AQUÍ
+                                     p(HTML(paste("<b>Distancia Total Recorrida (GPS):</b>", round(distancia_total_gps_km, 2), "km | <b>Promedio por Equipo:</b>", round(promedio_dist_gps_km, 2), "km"))),
+                                     p(HTML(paste("<b>Distancia Total Recorrida (App):</b>", round(distancia_total_app_km, 2), "km | <b>Promedio por Encuestador:</b>", round(promedio_dist_app_km, 2), "km")))
                                    )
                             ),
                             column(8,
@@ -593,7 +644,7 @@ ui <- bootstrapPage(
                                               DTOutput("tabla_comparativa")
                                        ),
                                        column(6,
-                                              h4("🛰️ Rendimiento por Equipo (GPS)", style = "color: #751dc3; border-bottom: 2px solid #751dc3; padding-bottom: 5px;"),
+                                              h4("️ Rendimiento por Equipo (GPS)", style = "color: #751dc3; border-bottom: 2px solid #751dc3; padding-bottom: 5px;"),
                                               DTOutput("tabla_comparativa_gps")
                                        )
                                      )
@@ -619,7 +670,7 @@ ui <- bootstrapPage(
                           fluidRow(
                             column(6,
                                    wellPanel(
-                                     h4("⌚ Horas Trabajadas: Equipos GPS"),
+                                     h4("Horas Trabajadas: Equipos GPS"),
                                      plotlyOutput("grafico_horas_gps", height = "300px"),
                                      hr(),
                                      DTOutput("tabla_horas_gps")
@@ -627,7 +678,7 @@ ui <- bootstrapPage(
                             ),
                             column(6,
                                    wellPanel(
-                                     h4("📱 Horas Trabajadas: Encuestadores App"),
+                                     h4("Horas Trabajadas: Encuestadores App"),
                                      plotlyOutput("grafico_horas_app", height = "300px"),
                                      hr(),
                                      DTOutput("tabla_horas_app")
@@ -995,7 +1046,7 @@ server <- function(input, output, session) {
   
   output$tabla_horas_gps <- renderDT({
     datatable(datos_horas_gps() %>% select(`Ruta GPS`, Inicio = Inicio_str, Fin = Fin_str, `Horas Trabajadas`), 
-              options = list(pageLength = 5, dom = 't', scrollX = TRUE), rownames = FALSE, class = 'cell-border stripe hover')
+              options = list(pageLength = 15, dom = 't', scrollX = TRUE), rownames = FALSE, class = 'cell-border stripe hover')
   })
   
   output$grafico_horas_gps <- renderPlotly({
