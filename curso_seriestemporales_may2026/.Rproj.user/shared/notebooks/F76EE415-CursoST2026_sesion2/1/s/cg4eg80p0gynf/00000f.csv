@@ -1,0 +1,4 @@
+"0","m2_q <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + temp_med + pm25, data = lima, family = quasipoisson(link = ""log""))  "
+"0",""
+"0","broom::tidy(m2_q, exponentiate = TRUE, conf.int = TRUE) |>   "
+"0","  dplyr::filter(term %in% c(""temp_med"",""pm25""))"

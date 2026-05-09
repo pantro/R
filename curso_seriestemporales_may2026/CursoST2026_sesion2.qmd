@@ -1,0 +1,490 @@
+---
+title: "Sesion 2: GLM y control de confusores temporales"
+subtitle: "Curso de Series de Tiempo en Salud Ambiental. UPCH GEOHealth"
+author: "Yasna Palmeiro Silva"
+date: "Mayo 2026"
+lang: es
+format: html
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+# Sesion 2: GLM y control de confusores temporales
+
+## Aprendizajes esperados
+
+Al final de la sesion, las y los participantes podran:
+
+1.  Justificar el uso de un modelo Poisson (y de la quasi-Poisson / binomial negativa) para conteos diarios de mortalidad y hospitalizaciones.
+2.  Reconocer y construir los confusores temporales en un estudio de series de tiempo ambiental: tendencia de largo plazo, estacionalidad, dia de la semana y feriados.
+3.  Implementar y comparar modelos progresivamente mas completos en `R`, interpretando como cambia el efecto estimado de la temperatura y del PM2.5 al anadir confusores.
+4.  Diagnosticar sobredispersion y autocorrelacion residual.
+
+# Bloque 1: Por que Poisson y no regresion lineal?
+
+## Naturaleza de los datos
+
+La mortalidad diaria (`mort_total`, `mort_cardio`, …) y las hospitalizaciones son **conteos no negativos**, frecuentemente con distribucion asimetrica y varianza que crece con la media.
+
+Una regresion lineal $y = X\beta + \varepsilon$ con $\varepsilon \sim N(0, \sigma^2)$:
+
+-   Puede predecir valores negativos.
+-   Asume varianza constante (homocedasticidad) cuando en realidad $\text{Var}(y) \approx E(y)$.
+-   No se interpreta naturalmente en escala multiplicativa (riesgo relativo).
+
+Poisson respeta la naturaleza del dato y, cuando hay sobredispersion (varianza \> media), se extiende a **quasi-Poisson** (mismo modelo medio, parametro de dispersión $\phi$ libre) o a **Negativa Binomial** (varianza cuadratica en la media).
+
+## Sobredispersion
+
+El modelo Poisson asume $\text{Var}(y) = E(y)$. En la practica suele ocurrir $\text{Var}(y) > E(y)$ (sobredispersion), por:
+
+-   Efectos no observados (clima, contaminantes no medidos, brotes).
+-   Heterogeneidad poblacional.
+
+Dos respuestas habituales:
+
+-   **Quasi-Poisson:** mismo punto-estimador que Poisson, pero los errores estandar se multiplican por $\sqrt{\hat{\phi}}$ donde $\hat{\phi}$ es el parámetro de dispersión. **Mantenemos los RR pero corregimos los IC.**
+-   **Binomial negativa:** parametriza explicitamente la sobredispersion con un parametro extra $\theta$. Util cuando $\hat{\phi}$ es muy grande.
+
+El **Modelo Lineal Generalizado (GLM) con familia Poisson/Quasi-Poisson o un Binomial Negativo** y enlace (o link) logaritmico responde a problemas anteriormente nombrados.
+
+## Que es un GLM?
+
+Un GLM, propuesto por Nelder y Wedderburn (1972), es una extension de la regresion lineal que se compone de tres elementos:
+
+1.  **Componente aleatorio:** la variable respuesta $Y_i$ proviene de una distribucion de la familia exponencial (Normal, Poisson, Binomial, Gamma, Negativa Binomial, etc.).
+2.  **Componente sistematico:** un predictor lineal $\eta_i = \beta_0 + \beta_1 x_{i1} + \dots + \beta_p x_{ip}$.
+3.  **Función de enlace** (*link function*) $g(\cdot)$ que conecta la media $\mu_i = E[Y_i]$ con el predictor lineal: $g(\mu_i) = \eta_i$.
+
+La regresion lineal clasica es un GLM con familia Normal y enlace identidad. La regresion logistica es un GLM con familia Binomial y enlace *logit*. En salud ambiental el caballo de batalla es el **GLM Poisson con enlace logaritmico**:
+
+$$Y_t \sim \text{Poisson}(\mu_t), \qquad \log \mu_t = \beta_0 + \beta_1 X_t + s(t) + \text{DOW}_t.$$
+
+Bajo este modelo, $e^{\beta_1}$ es la razon de tasas (rate ratio, RR) por unidad de aumento de la exposicion $X_t$.
+
+### Supuestos
+
+-   Los datos $Y_1, Y_2, \ldots, Y_n$ se distribuyen de forma independiente
+-   La variable dependiente $Y_i$ NO necesita distribuirse normalmente, pero tipicamente asume una distribucion de una familia exponencial (p. ej., binomial, Poisson, multinomial, normal, etc.).
+-   Un GLM NO asume una relacion lineal entre la variable de respuesta y las variables explicativas, pero si asume una relacion lineal entre la respuesta esperada transformada en terminos de la funcion de enlace y las variables explicativas; por ejemplo, para la regresión logistica binaria $\text{logit}(\pi) = \beta_0 + \beta_1 x$
+-   Las variables explicativas pueden ser transformaciones no lineales de algunas variables originales.
+-   Los errores necesitan ser independientes pero NO distribuidos normalmente.
+-   La estimacion de parametros utiliza la estimacion de maxima verosimilitud (MLE) en lugar de los minimos cuadrados ordinarios (OLS).
+
+## Componentes clave en un GLM de series de tiempo:
+
+1.  **Suavizacion de la tendencia y estacionalidad**: tipicamente con un *spline natural* del tiempo `ns(t, df = 7 * años)` (la regla de Schwartz: 7-8 df por anio captura tendencia y estacionalidad sin sobreajustar). Otras opciones: senos y cosenos (componentes de Fourier), variables indicadoras de mes/ano.
+2.  **Dia de la semana** (`dow`): factor con 7 niveles.
+3.  **Dias feriados** (`holiday`): yes/no.
+4.  **Otras covariables meteorologicas**: humedad relativa, otras
+5.  **Co-contaminantes**: si nos interesa el efecto independiente de PM2.5, se puede ajustar por NO2, O3.
+6.  **Regazos:** cuanto demora la exposicion en hacer efecto
+
+## Que son los *lags* o rezagos?
+
+Un *lag* (rezago) es una version desplazada en el tiempo de una variable. El *lag* 1 de la temperatura es la temperatura del día anterior. Formalmente, $X_{t-\ell}$ con $\ell = 1, 2, 3, \dots$.
+
+**Por que importan en salud ambiental?** Porque el efecto de una exposicion sobre la salud rara vez es instantaneo:
+
+-   El **PM2.5** suele tener un efecto que se manifiesta entre el dia 0 y el dia 3, o incluso mas para condiciones cronicas
+-   La **temperatura fria** tiene efectos diferidos hasta 14-21 dias despues.
+-   La **temperatura calurosa** tiene efectos mas inmediatos (dias 0-3) y a veces *harvesting* (mortalidad anticipada que reduce la mortalidad esperada en los dias siguientes).
+
+Modelar mal los rezagos puede subestimar el efecto total (si solo miramos el dia 0) o sobreestimarlo (si sumamos rezagos correlacionados sin estructura).
+
+## Tres formas de introducir *lags* en un GLM
+
+1.  ***Single-day lag***: incluir una sola variable rezagada
+
+    ```{r}
+    # datos <- datos %>%
+    #   mutate(temp_l0 = temp,
+    #          temp_l1 = lag(temp, 1),
+    #          temp_l2 = lag(temp, 2))
+    # m <- glm(muertes ~ temp_l1 + ns(t, df = 8 * 7) + dow,
+    #          data = datos, family = quasipoisson)
+    ```
+
+Util si se sabe que el efecto se concentra en un rezago especifico. Limitacion: ignora rezagos contiguos.
+
+2.  **Promedio movil de la exposicion (***moving average lag***)**: usar la media de los ultimos $L+1$ días
+
+```{r}
+# library(zoo)
+# datos <- datos %>%
+#   mutate(temp_ma03 = rollmean(temp, k = 4, align = "right", fill = NA))
+# m <- glm(muertes ~ temp_ma03 + ns(t, df = 8 * 7) + dow,
+#          data = datos, family = quasipoisson)
+```
+
+Captura el efecto acumulado en una ventana, pero impone que cada dia contribuya por igual.
+
+3.  **Rezagos multiples no constrenidos**: incluir simultaneamente $X_t, X_{t-1}, \dots, X_{t-L}$
+
+```{r}
+# m <- glm(muertes ~ temp_l0 + temp_l1 + temp_l2 +
+#                    ns(t, df = 8*7) + dow,
+#          data = datos, family = quasipoisson)
+```
+
+Es flexible pero los rezagos estan altamente correlacionados (multicolinealidad). Para resolverlo, se restringen los rezagos mediante una base polinomial o de splines –\> nacen los **modelos de rezagos distribuidos (DLM)** y, cuando ademas se permite no linealidad en la exposicion, los **DLNM**.
+
+# Bloque 2: Confusores temporales
+
+En estudios de series de tiempo ambientales, los principales confusores **no** son individuales (edad, sexo, comorbilidades): esos se cancelan porque la poblacion es la misma todos los dias (para series cortas). Los confusores que importan son **temporales**:
+
+| Confusor | Por que confunde? | Como se modela? |
+|----|----|----|
+| Tendencia de largo plazo | Cambios poblacionales y del sistema sanitario covarian con cambios climaticos lentos. | Spline natural del tiempo con pocos df/anio. |
+| Estacionalidad | Temperatura, PM2.5 e influenza covarian fuertemente con la estacion. | Spline de tiempo con suficientes df/anio, o terminos seno-coseno. |
+| Dia de la semana | Conteos administrativos varian por dia; trafico y emisiones tambien. | Variable categorica (factor). |
+| Feriados | Subregistro y patrones distintos. | Indicador 0/1. |
+
+## Modelado de la tendencia
+
+La tendencia se puede ajustar a traves de un modelo matematico para representarla $\hat{T}_t$
+
+-   **Modelo Lineal:** $T_t = \beta_0 + \beta_1 t$
+    -   Ajuste: `lm(Y ~ tiempo)`
+-   **Modelo Cuadratico:** $T_t = \beta_0 + \beta_1 t + \beta_2 t^2$
+    -   Ajuste: `lm(Y ~ poly(tiempo, 2, raw=TRUE))` o `lm(Y ~ tiempo + I(tiempo^2))`
+-   **Modelo Exponencial:** $T_t = \beta_0 e^{\beta_1 t}$ (tasa de crecimiento/decrecimiento constante). Se linealiza tomando logaritmos: $\log(T_t) = \log(\beta_0) + \beta_1 t = \alpha_0 + \alpha_1 t$.
+    -   Ajuste: `lm(log(Y) ~ tiempo)` (si $Y>0$)
+-   **Otros:** Polinomios de orden superior, splines
+
+Una vez ajustada la tendencia entonces se debe checkear los residuos del modelo para evaluar algun patron que revele tendencia.
+
+## Analisis de Estacionalidad
+
+Objetivo: Identificar, modelar y potencialmente eliminar el componente periodico regular de la serie (ya sin tendencia).
+
+**Deteccion de Estacionalidad**
+
+-   **Grafico temporal (Serie detrendizada):** Buscar patrones que se repiten cada $s$ períodos (ej. cada 52 semanas).
+
+-   **Grafico subseries estacionales (`gg_subseries`):** Graficar los datos para cada estacion (ej. cada semana 1-52) a lo largo de los anios. Ayuda a ver la forma promedio y si cambia.
+
+-   **Grafico ACF/PACF (Serie detrendizada):** Buscar **picos significativos en los lags estacionales** $s, 2s, 3s, ...$. Un pico fuerte en lag $s$ es clara evidencia de estacionalidad con periodo $s$
+
+-   **Periodograma:** Herramienta del analisis espectral que descompone la varianza de la serie por frecuencias. Busca picos de "potencia" en frecuencias correspondientes a ciclos estacionales.
+
+### Analisis espectral: el periodograma
+
+Una serie se puede pensar como la **suma de muchas oscilaciones simultaneas** de distintas frecuencias: algunas rapidas (ciclo semanal), otras lentas (ciclo anual). Esa mirada se llama **dominio de la frecuencia**, y el **periodograma** es su herramienta basica.
+
+Toda serie de tiempo finita puede descomponerse, por Fourier, en una suma de senos y cosenos de distintas frecuencias. El **periodograma** es, simplemente, **cuanta varianza de la serie aporta cada una de esas frecuencias**.
+
+Frecuencias con **mucha potencia** corresponden a oscilaciones que estan realmente presentes en los datos. Frecuencias con poca potencia corresponden a oscilaciones que casi no contribuyen.
+
+**Por que nos importa en epidemiologia ambiental?** Tres razones complementarias:
+
+1.  **Validar las decisiones que ya tomamos:** En la descomposicion STL fijamos frequency = 365 por convencion (Sesion 1). El periodograma nos dice empiricamente si ese fue el periodo correcto o no.
+2.  **Descubrir periodicidades olvidadas:** Si vemos un pico a 7 dias que no esperabamos, hay que modelar el dia de la semana. Cada pico es una decision de modelado.
+3.  **Cuantificar el peso relativo de cada ciclo:** En Lima esperamos un pico anual dominante, pero que tan grande es comparado con el pico semanal? La respuesta orienta cuantos grados de libertad invertir en cada componente del modelo.
+
+```{r periodograma, warning=FALSE}
+# Periodograma crudo (con suavizamiento)
+sp <- spec.pgram(lima$mort_total, log = "no", plot = FALSE,
+                 demean = TRUE, detrend = TRUE, spans = 6)
+
+# Convertir frecuencia a período (en dias) para interpretacion mas facil:
+pgram <- data.frame(periodo = 1 / sp$freq,
+                    potencia = sp$spec)
+# Recordar que periodo (1/f) de 2 dias es freq (f) 0.5, periodo de 7 dias (semanal) es frecuencia de 0.143 (1/7), periodo de 365 dias (ciclo anual - 1/365) es frequencia de 1/365... 
+
+ggplot(pgram, aes(periodo, potencia)) +
+  geom_line(colour = "grey30") +
+  geom_vline(xintercept = c(7, 365), linetype = "dashed", colour = "firebrick") +
+  scale_x_log10(breaks = c(2, 7, 14, 30, 90, 182, 365),
+                limits = c(2, 500)) +   
+  scale_y_log10() +   
+  annotate("text", x = 7,   y = Inf, label = "Semanal\n(DOW)",
+           vjust = 1.5, hjust = -0.1, size = 3) +
+  annotate("text", x = 365, y = Inf, label = "Anual\n(estacional)",
+           vjust = 1.5, hjust = 1.1, size = 3) +
+  labs(title = "Periodograma de mortalidad diaria (escala log-log)",
+       x = "Periodo (dias, escala log)",
+       y = "Densidad espectral (escala log)")
+```
+
+## Modelado de la Estacionalidad
+
+Una vez detectada la estacionalidad con periodo $s$, podemos modelarla $\hat{S}_t$.
+
+-   **Medias Estacionales:** Calcular la media de los valores (detrendizados) para cada estacion (ej. media de todas las semana 1, media de todas las semana 2...). Asume un patron constante que se repite. Simple pero rigido.
+
+-   **Variables dummy estacionales:** Incluir `factor(season)`. Similar a medias estacionales, estima un efecto fijo por estacion.
+
+-   **Regresion armonica (Series de Fourier):** Modela $S_t$ como una suma de $K$ pares de ondas seno y coseno con frecuencias multiplos de la frecuencia fundamental $1/s$.
+
+$$S_t = \sum_{k=1}^{K} [\alpha_k \sin(2\pi k t / s) + \beta_k \cos(2\pi k t / s)]$$
+
+$s$: Periodo estacional (ej. 52.18 para semanas/anio).
+
+$K$: Numero de armonicos. $K=1$ da una sinusoide simple. $K$ mayor permite formas mas complejas. Maximo $K = s/2$
+
+Pros: Modela patrones estacionales suaves y ciclicos. Contras: Asume que la forma estacional es constante en el tiempo.
+
+-   **Terminos de suavizamiento ciclicos integrados**
+
+## Analisis de Residuos
+
+Lo que queda despues de extraer $\hat{T}_t$ y $\hat{S}_t$ (y $\hat{C}_t$ si aplica) es el componente irregular o residuo estimado, $\hat{E}_t$.
+
+**Objetivo del Analisis:** Verificar si $\hat{E}_t$ se comporta como **ruido blanco**.
+
+-   Media cero
+
+-   Varianza constante
+
+-   Sin autocorrelacion
+
+**Metodos:**
+
+-   **Grafico Temporal de** $\hat{E}_t$**:** Buscar aleatoriedad alrededor de cero, sin patrones obvios ni cambios en la varianza.
+
+-   **ACF/PACF de** $\hat{E}_t$**:** Todas las barras (excepto lag 0) deberían estar **dentro** de los limites de significancia.
+
+-   **Test de Ljung-Box (`Box.test`) sobre** $\hat{E}_t$: Probar $H_0$: no hay autocorrelacion. Queremos un **p-valor grande (\> 0.05)**.
+
+-   **Histograma/QQ-Plot:** Evaluar normalidad.
+
+# Bloque 3: Practica: construyendo el modelo paso a paso
+
+## Setup
+
+```{r, warning=FALSE}
+library(dplyr) 
+library(lubridate) 
+library(ggplot2) 
+library(splines) 
+library(MASS)        # glm.nb 
+library(forecast)    # ggAcf 
+library(broom)       # tidy() 
+theme_set(theme_minimal(base_size = 12))  
+
+lima <- read.csv("Databases/lima_diario_2019_2023.csv", stringsAsFactors = FALSE) 
+lima$fecha <- as.Date(lima$fecha)
+lima$dia_semana  <- factor(lima$dia_semana, levels = c("lun","mar","mie","jue","vie","sab","dom")) 
+
+lima$tiempo <- as.numeric(lima$fecha - min(lima$fecha)) # días desde el inicio
+lima$log_pob <- log(lima$poblacion_anual) # offset Poisson
+
+n_anios <- as.numeric(diff(range(lima$fecha))) / 365.25 
+df_tiempo <- round(8 * n_anios) # ~8 df por anio
+df_tiempo
+```
+
+## Modelo 0: solo exposiciones (ingenuo)
+
+```{r m0}
+m0 <- glm(mort_total ~ temp_med + pm25,
+          offset = log_pob,
+          data = lima, family = poisson(link = "log"))
+
+broom::tidy(m0, exponentiate = TRUE, conf.int = TRUE)
+```
+
+> **Lectura:** este modelo nos da RR "crudos" sin controlar nada.
+>
+> -   temp_med = 0.98 Un aumento de 1 C se asocia con una disminucion del 2.2% en la mortalidad diaria total (cambio por 5 C = `exp(5 * coef(m0)["temp_med"])` = 0.89 = 11% menos de mortalidad por cada 5 C mas de temperatura).
+>
+> -   pm25 = 1.0061 Un aumento de 1 $\mu$g/m³ se asocia con un aumento del 0.6% en la mortalidad (6.3% mas de mortalidad por cada 10 $\mu$g/m³ adicionales de PM2.5.)
+>
+> **Problema?**
+>
+> 1.  El efecto de la temperatura tiene la "direccion esperada" pero por la razon equivocada: el **modelo asume linealidad** y esta aplicando esa pendiente negativa a TODA la temperatura.
+> 2.  El efecto del PM2.5 esta inflado: Un 6.3% diario por +10 $\mu$g/m³ es enorme comparado con la literatura Sin **controlar estacion** (y otros factores asociados no observados), todos esos efectos se le atribuyen al PM2.5 porque comparten el mismo patron temporal.
+> 3.  Los errores estandar son demasiado pequenos, lo que parece "muy preciso", pero es un artefacto: al ignorar la **autocorrelacion** serial y usar Poisson (que asume varianza = media), los IC estan subestimados.
+
+```{r}
+data.frame(Variable = c("Temperatura (+5 °C)", "PM2.5 (+10 µg/m³)"),   
+           RR = round(c(exp(5  * coef(m0)["temp_med"]),
+                        exp(10 * coef(m0)["pm25"])), 3),   
+           IC_inf = round(c(exp(5  * confint(m0)["temp_med", 1]),
+                            exp(10 * confint(m0)["pm25",     1])), 3),   
+           IC_sup = round(c(exp(5  * confint(m0)["temp_med", 2]),
+                            exp(10 * confint(m0)["pm25",     2])), 3) )
+```
+
+## Modelo 1: sumar tendencia y estacionalidad (spline de tiempo)
+
+```{r m1}
+m1 <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + temp_med + pm25,
+          offset = log_pob,
+          data = lima, family = poisson(link = "log"))
+
+broom::tidy(m1, exponentiate = TRUE, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("temp_med","pm25"))
+```
+
+> **Que cambio?** Al introducir el spline natural `ns()` del tiempo absorbemos tendencia + estacionalidad anual. El efecto de temperatura y PM2.5 ahora estima la asociacion con la variacion dia-a-dia, que es lo que queremos.
+
+## Modelo 2: sumar dia de la semana y feriado
+
+```{r m2}
+m2 <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + temp_med + pm25,
+          offset = log_pob,
+          data = lima, family = poisson(link = "log"))
+
+broom::tidy(m2, exponentiate = TRUE, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("temp_med","pm25"))
+```
+
+## Comparacion de coeficientes
+
+```{r tabla_comparacion}
+extraer <- function(mod, nombre) {
+  broom::tidy(mod, exponentiate = TRUE, conf.int = TRUE) |>
+    dplyr::filter(term %in% c("temp_med","pm25")) |>
+    dplyr::transmute(modelo = nombre, term, RR = round(estimate, 4),
+                     IC_inf = round(conf.low, 4), IC_sup = round(conf.high, 4))
+}
+
+dplyr::bind_rows(
+  extraer(m0, "M0 ingenuo"),
+  extraer(m1, "M1 + tendencia+estacion"),
+  extraer(m2, "M2 + DOW + feriado")
+)
+```
+
+## Comparacion formal de modelos: AIC
+
+Para decidir entre modelos anidados (M0 contenido en M1, M1 contenido en M2), no basta con mirar como cambian los coeficientes, conviene comparar la **bondad de ajuste** ajustada por la complejidad. La herramienta clasica es el **Criterio de Informacion de Akaike (AIC)**
+
+$$
+\text{AIC} = -2\, \log L + 2 k
+$$
+
+donde $\log L$ es la log-verosimilitud del modelo y $k$ el numero de parametros. **Cuanto menor el AIC, mejor el modelo** en terminos de balance ajuste-parsimonia.
+
+```{r aic_comparison}
+data.frame(
+  modelo = c("M0 ingenuo", "M1 + tend.+estac.", "M2 + DOW + feriado"),
+  AIC    = round(c(AIC(m0), AIC(m1), AIC(m2)), 1),
+  delta_AIC = round(c(AIC(m0), AIC(m1), AIC(m2)) - min(c(AIC(m0), AIC(m1), AIC(m2))), 1),
+  df     = c(length(coef(m0)), length(coef(m1)), length(coef(m2)))
+)
+```
+
+> **Nota importante sobre quasi-Poisson y AIC.** El modelo quasi-Poisson NO tiene una verosimilitud propiamente dicha (es un modelo *quasi-likelihood*), por lo que `AIC()` aplicado a un objeto `quasipoisson` devuelve `NA`. En esos casos hay dos alternativas:
+>
+> -   Calcular el **QAIC** (Quasi-AIC) manualmente: $\text{QAIC} = -2 \log L_{\text{Poisson}} / \hat{\phi} + 2k$, donde $\hat{\phi}$ es el parametro de dispersion.
+> -   O simplemente ajustar los modelos con `family = poisson` para comparar AIC, y luego refittar el modelo elegido con `quasipoisson` para los IC corregidos.
+
+> **Lectura del AIC en este analisis:** se espera ver una caida dramatica entre M0 y M1 (al agregar el spline de tiempo, el modelo mejora muchisimo en ajuste), y una caida menor pero apreciable entre M1 y M2 (DOW y feriado aportan, pero menos). Si M2 tuviera un AIC mayor que M1, podriamos pensar en quitar DOW.
+
+### Ejercicio 2.1: Compare los RR de `temp_med` y `pm25` entre M0, M1 y M2
+
+1.  Cual cambia mas? Por que tiene sentido que el efecto de la temperatura cambie de signo o magnitud al controlar por estacion?
+2.  Cual es el RR mas creible y por que?
+3.  Que le diria a un analista que solo le muestra los resultados del modelo M0?
+
+# Bloque 4: Sobredispersion y diagnostico
+
+## Estoy ante sobredispersion?
+
+```{r dispersion}
+phi_m2 <- sum(residuals(m2, type = "pearson")^2) / df.residual(m2) 
+
+phi_m2
+```
+
+> Si $\hat{\phi} > 1.2$ aproximadamente, conviene usar quasi-Poisson o binomial negativa. Si $\hat{\phi} \approx 1$, Poisson basta.
+
+## Quasi-Poisson
+
+```{r quasipoisson}
+m2_q <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + temp_med + pm25,
+            offset = log_pob,
+            data = lima, family = quasipoisson(link = "log"))
+
+broom::tidy(m2_q, exponentiate = TRUE, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("temp_med","pm25"))
+```
+
+> **Nota:** los puntos-estimadores son identicos a Poisson; solo cambian los IC, ahora corregidos por sobredispersion.
+
+## Binomial negativa (alternativa)
+
+```{r negbin, warning=FALSE}
+m2_nb <- MASS::glm.nb(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + temp_med + pm25 + offset(log_pob), data = lima)
+
+summary(m2_nb)$theta
+```
+
+> Notar que `glm.nb` no acepta el argumento `offset =` separado; se debe escribir `+ offset(log_pob)` dentro de la formula.
+
+## Diagnostico de residuos
+
+Un GLM bien especificado deberia tener residuos sin estructura temporal residual.
+
+```{r diag}
+res_m2 <- residuals(m2_q, type = "deviance") 
+
+ggplot(data.frame(fecha = lima$fecha, res = res_m2),
+       aes(fecha, res)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, col = "red") +
+  labs(title = "Residuos de devianza vs tiempo (M2 quasi-Poisson)", y = "Residuo de devianza")  
+
+forecast::ggAcf(res_m2, lag.max = 60) + 
+  ggtitle("ACF de residuos: queda estructura temporal?")
+```
+
+> **Lectura:** si la ACF muestra picos en lag 1-3 importantes, hay autocorrelacion residual. Para esto se debera evaluar integrar terminos de AR.
+>
+> Aun asi, un GLM con buen control de confusores temporales suele dejar autocorrelacion menor; los IC quasi-Poisson son razonables.
+
+## En resumen: GLM Poisson
+
+**Pros:** transparente, ampliamente conocido, computacionalmente barato; los coeficientes tienen interpretación directa (RR); facil de extender con interacciones y terminos parametricos.
+
+**Contras:** requiere imponer la forma funcional (lineal o polinomica) de la relacion exposicion-respuesta, lo que rara vez es realista para temperatura; el manejo de rezagos sin estructura genera multicolinealidad; no capta cambios suaves en la tendencia tan elegantemente como un GAM.
+
+## Ultimos aspectos claves
+
+1.  Elegir cuasi-Poisson antes que Poisson estricto a menos que se haya verificado $\phi \approx 1$
+2.  Decidir los df del *time spline* con criterio (la convención de 7-8 df/anio es un punto de partida, no una regla; verificar con analisis de sensibilidad).
+3.  Siempre incluir dia de la semana y feriados.
+4.  Decidir *a priori* la estructura de rezagos basandose en la fisiopatologia (PM: 0-3 dias; frio: 0-21 dias).
+5.  Reportar el RR por incrementos relevantes (10 $\mu$g/m³ para PM2.5; cambio del percentil 1 al 99 para temperatura).
+6.  Hacer analisis de sensibilidad: variar df, ventanas de rezagos, ajustar por co-contaminantes.
+
+# Bloque 5: Practica autonoma
+
+### Ejercicio 2.2: Repita el analisis paso a paso usando `mort_cardio` como outcome
+
+1.  Ajuste M0, M1, M2 quasi-Poisson.
+2.  Tabule los RR de `temp_med` y `pm25`.
+3.  La sensibilidad al control por confusores es mayor o menor que con `mort_total`? Hipotesis sobre por que?
+
+```{r ejercicio_2_2, eval=FALSE}
+# Tu codigo aqui
+```
+
+### Ejercicio 2.3: Repita el analisis paso a paso usando `hosp_resp` como outcome
+
+1.  Ajste el modelo M2 quasi-Poisson para `hosp_resp`.
+2.  Calcule el RR por **incremento de 10 µg/m³** de PM2.5
+3.  Interprete el resultado en una frase corta para un publico no tecnico.
+
+```{r ejercicio_2_3, eval=FALSE}
+# Tu codigo aqui
+```
+
+### Ejercicio 2.4: Reajuste M2 con `df_tiempo` correspondiente a 4, 10 y 14 df por año para `mort_total`. Para cada uno, registre el RR de `pm25`
+
+1.  A modo general, que tan sensible es el resultado al numero de df?
+2.  Que riesgo se corre con muy pocos df? Y con demasiados?
+
+```{r ejercicio_2_4, eval=FALSE}
+# Tu codigo aqui
+```
+
+# Cierre
+
+1.  Por que decimos que en series de tiempo ambientales cada individuo es su propio control?
+2.  Si su jefatura le pide "el efecto del PM2.5 en una sola cifra", cual es la decision metodologica mas importante de comunicar junto a esa cifra?

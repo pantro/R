@@ -1,0 +1,37 @@
+"0","m_gam <- mgcv::gam(mort_total ~ s(tiempo, k = df_tiempo + 5) +"
+"0","                     dia_semana + feriado + s(temp_med, k = 6) + pm25 + offset(log_pob),"
+"0","                   data = lima, family = quasipoisson(link = ""log""),"
+"0","                   method = ""REML"")"
+"0","summary(m_gam)"
+"1","
+Family: quasipoisson 
+Link function: log 
+
+Formula:
+mort_total ~ s(tiempo, k = df_tiempo + 5) + dia_semana + feriado + 
+    s(temp_med, k = 6) + pm25 + offset(log_pob)
+
+Parametric coefficients:
+                Estimate Std. Error   t value Pr(>|t|)    
+(Intercept)   -1.109e+01  1.070e-02 -1036.239  < 2e-16 ***
+dia_semanamar -3.795e-02  7.033e-03    -5.397 7.71e-08 ***
+dia_semanamie -3.393e-02  7.028e-03    -4.829 1.49e-06 ***
+dia_semanajue -3.698e-02  7.029e-03    -5.261 1.61e-07 ***
+dia_semanavie -2.998e-02  7.020e-03    -4.271 2.05e-05 ***
+dia_semanasab -3.137e-02  7.102e-03    -4.417 1.06e-05 ***
+dia_semanadom -3.238e-02  7.131e-03    -4.542 5.96e-06 ***
+feriado       -1.040e-01  1.920e-02    -5.420 6.78e-08 ***
+pm25           4.910e-04  3.812e-04     1.288    0.198    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Approximate significance of smooth terms:
+               edf Ref.df      F p-value    
+s(tiempo)   32.126 37.710 15.894 < 2e-16 ***
+s(temp_med)  3.817  4.454  4.043 0.00208 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+R-sq.(adj) =  0.663   Deviance explained = 67.2%
+-REML = 1067.1  Scale est. = 1.0512    n = 1826
+"

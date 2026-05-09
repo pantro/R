@@ -1,0 +1,6 @@
+"0","m2 <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + temp_med + pm25,"
+"0","          offset = log_pob,"
+"0","          data = lima, family = poisson(link = ""log""))"
+"0",""
+"0","broom::tidy(m2, exponentiate = TRUE, conf.int = TRUE) |>"
+"0","  dplyr::filter(term %in% c(""temp_med"",""pm25""))"

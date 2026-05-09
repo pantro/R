@@ -1,0 +1,4 @@
+"0","m_ns <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + ns(temp_med, df = 4) + pm25,"
+"0","            offset = log_pob,"
+"0","            data = lima, family = quasipoisson(link = ""log""))"
+"0",""

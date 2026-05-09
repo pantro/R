@@ -1,0 +1,7 @@
+"0","# Detalle por pares de terminos"
+"0","mgcv::concurvity(m_gam, full = FALSE)$worst"
+"1","                    para    s(tiempo)  s(temp_med)
+para        1.000000e+00 2.010627e-19 5.198704e-27
+s(tiempo)   2.010680e-19 1.000000e+00 7.882308e-01
+s(temp_med) 5.188815e-27 7.882308e-01 1.000000e+00
+"

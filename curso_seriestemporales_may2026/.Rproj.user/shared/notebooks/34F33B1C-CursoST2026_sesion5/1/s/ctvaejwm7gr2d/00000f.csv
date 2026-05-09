@@ -1,0 +1,6 @@
+"0","plot(pred_temp, ""overall"","
+"0","     xlab = ""Temperatura media (°C)"","
+"0","     ylab = ""RR acumulado (lag 0-21)"","
+"0","     main = paste0(""DLNM temperatura-mortalidad. Lima 2019-2023\n"","
+"0","                   ""MMT empirica = "", round(mmt_emp, 1), "" °C""),"
+"0","     col = ""firebrick"", lwd = 2, ci.arg = list(col = ""grey80""))"

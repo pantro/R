@@ -1,0 +1,32 @@
+"0","lag_max <- 21"
+"0",""
+"0","cb_temp <- crossbasis("
+"0","  lima$temp_med,"
+"0","  lag = lag_max,"
+"0","  argvar = list(fun = ""bs"", degree = 2,"
+"0","                knots = quantile(lima$temp_med, c(0.10, 0.75, 0.90))),"
+"0","  arglag = list(fun = ""ns"","
+"0","                knots = logknots(lag_max, 3))"
+"0",")"
+"0",""
+"0","summary(cb_temp)"
+"1","CROSSBASIS FUNCTIONS
+observations: 1826 
+range: 12.04 to 25.65 
+lag period: 0 21 
+total df:  25 
+
+BASIS FOR VAR:
+fun: bs 
+knots: 15.82 20.9 22.13 
+degree: 2 
+intercept: FALSE 
+Boundary.knots: 12.04 25.65 
+
+BASIS FOR LAG:
+fun: ns 
+knots: 1.011193 2.779473 7.639956 
+intercept: TRUE 
+Boundary.knots: 0 21 
+
+"

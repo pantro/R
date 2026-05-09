@@ -1,0 +1,6 @@
+"0","mgcv::concurvity(m_gam, full = TRUE)"
+"1","              para  s(tiempo) s(temp_med)
+worst    0.9695779 0.84929515   0.7889621
+observed 0.9695779 0.81984164   0.2406079
+estimate 0.9695779 0.01678465   0.6675514
+"

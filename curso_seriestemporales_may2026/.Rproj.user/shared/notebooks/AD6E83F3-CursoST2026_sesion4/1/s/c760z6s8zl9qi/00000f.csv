@@ -1,0 +1,3 @@
+"0","acf(residuals(m_gam, type = ""deviance""),"
+"0","    lag.max = 30,"
+"0","    main = ""ACF de residuos del GAM"")"

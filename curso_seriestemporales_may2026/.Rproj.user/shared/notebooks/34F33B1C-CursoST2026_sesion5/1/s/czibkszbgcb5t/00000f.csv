@@ -1,0 +1,10 @@
+"0","m_dlnm <- glm(mort_total ~ cb_temp + ns(tiempo, df = df_tiempo) +"
+"0","                dia_semana + feriado,"
+"0","              offset = log_pob,"
+"0","              data = lima, family = quasipoisson(link = ""log""))"
+"0",""
+"0","phi <- sum(residuals(m_dlnm, type = ""pearson"")^2) / df.residual(m_dlnm)"
+"0",""
+"0","phi"
+"1","[1] 1.027693
+"

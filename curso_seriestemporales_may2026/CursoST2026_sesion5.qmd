@@ -1,0 +1,404 @@
+---
+title: "Sesion 5: DLNM: Modelos de rezagos distribuidos no lineales"
+subtitle: "Curso de Series de Tiempo en Salud Ambiental. UPCH GEOHealth"
+author: "Yasna Palmeiro Silva"
+date: "Mayo 2026"
+lang: es
+format: html
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+# Sesion 5: DLNM: Modelos de rezagos distribuidos no lineales
+
+## Aprendizajes esperados
+
+Al final de la sesion, las y los participantes podran:
+
+1.  Explicar la idea de **cross-basis** y por que un DLNM combina dos dimensiones: la respuesta al **valor** del predictor y la respuesta a lo largo del **lag**.
+2.  Implementar y graficar un DLNM para temperatura-mortalidad usando el paquete `dlnm` en `R`.
+3.  Identificar la **MMT** (Minimum Mortality Temperature) y reportar el RR a percentiles extremos (frio y calor).
+4.  Calcular y discutir la **fraccion atribuible** a la temperatura.
+5.  Aplicar lo aprendido a un analisis integrador para el **PM2.5**.
+
+# Bloque 1: De los lags individuales al DLNM
+
+## El problema con los lags individuales
+
+En la Sesion 4 vimos que ajustar lags 0, 1, 2, 3 del mismo predictor genera **multicolinealidad**: los coeficientes individuales se vuelven inestables y los IC se ensanchan. Si quisieramos lag 0-21 dias, agregariamos 22 coeficientes muy correlacionados: inviable.
+
+## La idea del DLNM
+
+Los DLNM son la herramienta dominante hoy en epidemiología ambiental para modelar simultaneamente dos relaciones potencialmente no lineales:
+
+1.  La forma **no lineal** de la relacion entre $x$ (la exposicion) y el outcome: *dimension predictor* $f(x)$: como el riesgo varia con el nivel de la exposicion (p. ej., curva en U para temperatura).
+2.  La forma **suavizada** de como el efecto se distribuye en el tiempo desde el dia de exposicion hasta el dia $L$: *dimension lag* o **relacion rezago-respuesta** $w(\ell)$: como el efecto de la exposicion se distribuye en los dias posteriores (p. ej., concentrado en $\ell = 0\text{–}3$ para PM2.5; extendido hasta $\ell = 21$ para frio).
+
+Esto se logra mediante un **cross-basis**: se construye una base de funciones para el valor de $x$ (p. ej. spline cubico de B con 4 nodos) **y** una base para el lag (p. ej. spline natural con 3 df sobre 0-21 dias). El resultado es una superficie tridimensional $f(x, \ell)$ y un coeficiente bidimensional resumen.
+
+El resultado es una **superficie 3D** (RR vs valor de $x$ vs lag) de la que se pueden tomar:
+
+-   **Cortes a lag fijo** -\> curva exposicion-respuesta a 1, 7, 14 dias.
+-   **Cortes a valor fijo** -\> curva lag-respuesta a un percentil extremo.
+-   **Efecto acumulado** -\>integral sobre todos los lags = RR total.
+
+## La *cross-basis*
+
+El DLNM se construye sobre dos bases (matrices de funciones base) que se combinan tensorialmente:
+
+$$\text{cross-basis}(X, \ell) = B_x \otimes B_\ell$$
+
+-   **Base de exposicion** $B_x$: como se modela la dimension $x$ (lineal, polinomica, *natural cubic spline*, *strata*, *threshold*).
+-   **Base de rezago** $B_\ell$: como se modela la dimension rezago $\ell$ (polinomica, spline natural, estratos).
+
+El producto tensorial genera un conjunto de variables sinteticas que se incluyen como predictoras en un GLM o GAM. Tras ajustar el modelo, la funcion `crosspred()` recupera las superficies de efecto y los efectos resumen (acumulados en el rezago, o por valor de exposicion a un rezago especifico).
+
+Formalmente, si $X$ es la matriz $T \times (L+1)$ con la exposicion en cada rezago, la cross-basis transforma esa información en una matriz $T \times v_x v_\ell$, donde $v_x$ y $v_\ell$ son el numero de funciones base en cada dimensión.
+
+## Diferencias respecto a GLM y GAM
+
+-   **GLM:** asume que la relacion exposicion-respuesta es lineal o polinomica simple, y que el efecto se concentra en un rezago o en un promedio constante. El DLNM permite formas arbitrarias en ambas dimensiones.
+-   **GAM:** maneja no linealidad en cada predictor por separado, pero la dimensión rezago se trata habitualmente como una variable mas (single lag o moving average). El DLNM las trata conjuntamente.
+-   **Marco:** el DLNM no es un modelo nuevo, es un *metodo de construccion de variables*: la cross-basis se inserta dentro de un GLM o un GAM. Por tanto hereda toda la diagnostica de su modelo huesped.
+
+## Principal ventaja y desventaja
+
+**Ventaja:** es la unica forma estadisticamente coherente de estimar simultaneamente la forma exposicion-respuesta y la estructura de rezagos, capturando fenomenos como el *harvesting* (mortalidad anticipada que produce coeficientes negativos en rezagos posteriores al pico) y permitiendo cuantificar la **carga acumulada** del frio y el calor de manera comparable entre estudios.
+
+**Desventaja:** mayor complejidad y numero de parametros; la eleccion de la base, los nudos y el rezago maximo $L$ tiene efectos no triviales en los resultados; la interpretacion requiere visualizacion tridimensional y comunicar los resultados es mas exigente.
+
+## Cómo definir los parametros del modelo
+
+1.  **Rezago maximo** $L$:
+    -   PM2.5 y otros contaminantes: 0-3 o 0-7 dias.
+
+    -   Temperatura: 0-21 días (frio) o 0-14 (calor); habitualmente 0-21 para mortalidad total.
+
+    -   Decision basada en literatura previa y sensibilidad biologica.
+2.  **Base de exposicion** $B_x$
+    -   Para temperatura: *natural cubic spline* con 3-5 grados de libertad (df), nudos al 10/75/90 percentiles o equiespaciados.
+
+    -   Para PM2.5: lineal o spline con 2-3 df.
+
+    -   `argvar = list(fun = "ns", knots = quantile(x, c(.10, .75, .90)))`.
+3.  **Base de rezago** $B_\ell$:
+    -   Spline natural con nudos espaciados de manera logaritmica: $\ell = 1, 2, 4, 8, 14, 21$
+
+    -   `arglag = list(fun = "ns", knots = logknots(L, nk = 3))`.
+4.  **Punto de referencia (`cen`):** valor de la exposicion respecto al cual se reportan los riesgos relativos. Para temperatura, suele ser la **temperatura de minima mortalidad (MMT)**; para PM2.5, la guia OMS (5 µg/m³) o el percentil minimo.
+
+# Bloque 2: DLNM para temperatura-mortalidad en Lima
+
+## Setup
+
+```{r setup}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(splines)
+library(dlnm)        # cross-basis y crosspred
+library(tsModel)     # Lag()
+library(broom)
+theme_set(theme_minimal(base_size = 12))
+
+lima <- read.csv("~/Descargas/Curso_2026/Databases/lima_diario_2019_2023.csv", stringsAsFactors = FALSE)
+lima$fecha      <- as.Date(lima$fecha)
+lima$dia_semana <- factor(lima$dia_semana,
+                          levels = c("lun","mar","mie","jue","vie","sab","dom"))
+lima$tiempo     <- as.numeric(lima$fecha - min(lima$fecha))
+lima$log_pob    <- log(lima$poblacion_anual)            
+
+n_anios   <- as.numeric(diff(range(lima$fecha))) / 365.25
+df_tiempo <- round(8 * n_anios)
+```
+
+## Construir el cross-basis para temperatura
+
+```{r cb_temp}
+lag_max <- 21
+
+cb_temp <- crossbasis(
+  lima$temp_med,
+  lag = lag_max,
+  argvar = list(fun = "bs", degree = 2,
+                knots = quantile(lima$temp_med, c(0.10, 0.75, 0.90))),
+  arglag = list(fun = "ns",
+                knots = logknots(lag_max, 3))
+)
+
+summary(cb_temp)
+```
+
+> **Decisiones tomadas:**
+>
+> -   `argvar`: spline cuadratico con 3 nodos en los percentiles 10, 75 y 90 –\> captura curvatura en frio y en calor.
+> -   `arglag`: spline natural sobre lag 0-21 dias con 3 nodos en escala logaritmica (mas resolucion en lag corto, donde estan los efectos agudos de calor).
+
+## Modelo Poisson con el cross-basis
+
+```{r dlnm_modelo}
+m_dlnm <- glm(mort_total ~ cb_temp + ns(tiempo, df = df_tiempo) +
+                dia_semana + feriado,
+              offset = log_pob,
+              data = lima, family = quasipoisson(link = "log"))
+
+phi <- sum(residuals(m_dlnm, type = "pearson")^2) / df.residual(m_dlnm)
+
+phi
+```
+
+> Ojo: **No incluimos PM2.5** en este primer modelo, para estimar el efecto **total** de la temperatura sobre mortalidad. Para estimar el efecto **directo** (no mediado por PM2.5) lo sumariamos como covariable. Esa decision depende de la pregunta causal.
+
+## Prediccion y MMT
+
+```{r mmt}
+# Identificar la MMT empirica con percentiles 1-99 (recortar colas)
+pred_temp <- crosspred(cb_temp, m_dlnm,
+                       cen = median(lima$temp_med),  # centro inicial provisional
+                       by = 0.1)
+
+# Buscar la temperatura con menor RR acumulado en lag 0-21
+mmt_emp <- pred_temp$predvar[which.min(pred_temp$allRRfit)]
+mmt_emp
+
+# Recalcular pred centrando en la MMT empirica
+pred_temp <- crosspred(cb_temp, m_dlnm, cen = mmt_emp, by = 0.1)
+```
+
+## Curva de efecto acumulado (overall cumulative)
+
+```{r curva_acumulada}
+plot(pred_temp, "overall",
+     xlab = "Temperatura media (°C)",
+     ylab = "RR acumulado (lag 0-21)",
+     main = paste0("DLNM temperatura-mortalidad. Lima 2019-2023\n",
+                   "MMT empirica = ", round(mmt_emp, 1), " °C"),
+     col = "firebrick", lwd = 2, ci.arg = list(col = "grey80"))
+abline(v = mmt_emp, lty = 2)
+```
+
+> **Lectura:** el RR acumulado integra el efecto a lo largo de los 21 dias posteriores a una exposicion. Un RR de 1.30 a 14 °C significa que la mortalidad acumulada en los siguientes 21 dias tras un dia a 14 °C es 30% mayor que si ese dia hubiera estado a la MMT.
+
+## Superficie 3D y cortes lag-respuesta
+
+```{r superficie_3d, fig.width=7, fig.height=5}
+plot(pred_temp, xlab = "Temperatura (°C)", ylab = "Lag (dias)",
+     zlab = "RR", theta = 215, phi = 30, ltheta = -45,
+     main = "Superficie de respuesta. DLNM Lima")
+```
+
+```{r cortes_lag}
+# Cortes a percentiles frios y calientes
+p_frio    <- quantile(lima$temp_med, 0.01)
+p_caliente <- quantile(lima$temp_med, 0.99)
+
+# Ajustar al valor exacto que si existe en la grilla del crosspred
+snap <- function(x) pred_temp$predvar[which.min(abs(pred_temp$predvar - x))]
+v_frio     <- snap(p_frio)
+v_caliente <- snap(p_caliente)
+
+cat("P1  bruto =", round(p_frio, 2),     "-> usado en grilla:", v_frio, "\n",
+    "P99 bruto =", round(p_caliente, 2), "-> usado en grilla:", v_caliente, "\n")
+
+par(mfrow = c(1, 2))
+plot(pred_temp, "slices", var = v_frio,
+     xlab = "Lag (dias)", ylab = "RR",
+     main = paste0("Frio extremo (P1 ≈ ", round(v_frio, 1), " °C)"),
+     col = "navyblue", lwd = 2)
+abline(h = 1, lty = 2)
+
+plot(pred_temp, "slices", var = v_caliente,
+     xlab = "Lag (dias)", ylab = "RR",
+     main = paste0("Calor extremo (P99 ≈ ", round(v_caliente, 1), " °C)"),
+     col = "firebrick", lwd = 2)
+abline(h = 1, lty = 2)
+par(mfrow = c(1, 1))
+```
+
+> **Lectura biologica esperada:** el frio muestra una curva lag-respuesta **prolongada** (efecto significativo hasta lag \~14 dias); el calor muestra un pico **agudo** en lag 0-3 dias, a veces seguido de un descenso (harvesting).
+
+## Reporte de RR puntuales
+
+```{r rr_puntuales}
+# Helper para encontrar el indice de la grilla mas cercano a un valor dado.
+# Esto es mas robusto que indexar por nombre, porque la grilla del
+# crosspred() rara vez calza exactamente con los percentiles redondeados.
+idx_cercano <- function(pred, valor) which.min(abs(pred$predvar - valor))
+
+i_frio <- idx_cercano(pred_temp, p_frio)
+i_cal  <- idx_cercano(pred_temp, p_caliente)
+
+data.frame(
+  Escenario = c("Frio extremo P1 vs MMT", "Calor extremo P99 vs MMT"),
+  Temp      = round(c(p_frio, p_caliente), 1),
+  RR        = round(c(pred_temp$allRRfit[i_frio],  pred_temp$allRRfit[i_cal]),  3),
+  IC_inf    = round(c(pred_temp$allRRlow[i_frio],  pred_temp$allRRlow[i_cal]),  3),
+  IC_sup    = round(c(pred_temp$allRRhigh[i_frio], pred_temp$allRRhigh[i_cal]), 3)
+)
+```
+
+## Como saber si el modelo esta bien?
+
+Los diagnosticos clave son los del modelo huesped (GLM o GAM) mas algunos especificos del DLNM:
+
+1.  **Autocorrelacion residual:** la ACF de los residuos de devianza debe ser aproximadamente blanca. Si no, aumentar `df` del spline temporal o reducir el rezago maximo.
+
+```{r}
+acf(residuals(m_dlnm, type = "deviance"), lag.max = 60)
+```
+
+2.  **Sobredispersion:** $\phi$ moderadamente \> 1 esta bien (cuasi-Poisson lo absorbe). $\phi \gg 2$ sugiere mala especificacion.
+3.  **Convergencia y multicolinealidad de la cross-basis:** si los SE explotan, reducir `df` en exposicion o rezago, o cambiar la base.
+4.  **Sensibilidad a la eleccion de la base:** repetir el modelo con `fun = "bs"` vs `fun = "ns"`, distintos nudos, distintos `L`. Reportar la estabilidad como apoyo a la robustez.
+5.  **AIC/Q-AIC para comparar modelos** (con `fqaic()` de la documentación de Gasparrini, ya que `glm` no entrega QAIC nativo):
+
+```{r}
+fqaic <- function(model) {
+  loglik <- sum(dpois(model$y, model$fitted.values, log = TRUE))
+  phi    <- summary(model)$dispersion
+  -2 * loglik + 2 * summary(model)$df[3] * phi
+}
+fqaic(m_dlnm)
+
+```
+
+6.  **Plausibilidad biologica de la curva**: una curva con oscilaciones espurias (varios picos y valles fisicamente irracionales) sugiere sobreajuste; reducir `df`.
+7.  **Analisis de sensibilidad** sistematico: variar `df_var`, `df_lag`, `L`, `df_time`, ajustar por co-contaminantes, restringir a estaciones del anio, estratificar por sexo y grupo etario.
+
+# Bloque 3: Fraccion atribuible a la temperatura
+
+La **fraccion atribuible (AF)** indica que proporcion de las muertes observadas son atribuibles a la exposicion a temperaturas distintas de la MMT. Es la metrica mas util para comunicar el impacto poblacional.
+
+## Implementacion con `attrdl`
+
+`attrdl` es una funcion auxiliar publicada por Gasparrini & Leone (2014).
+
+```{r attrdl, eval=FALSE}
+# Carga de la función helper (descargar de
+# https://github.com/gasparrini/2014_gasparrini_BMCmrm_Rcodedata)
+source("~/Descargas/Curso_2026/attrdl.R")
+
+# AF total (sumando frio y calor)
+af_total <- attrdl(lima$temp_med, cb_temp, lima$mort_total, m_dlnm,
+                   type = "af", cen = mmt_emp)
+af_total
+
+# AF separada para frio y para calor
+af_frio   <- attrdl(lima$temp_med, cb_temp, lima$mort_total, m_dlnm,
+                    type = "af", cen = mmt_emp,
+                    range = c(min(lima$temp_med), mmt_emp))
+af_calor  <- attrdl(lima$temp_med, cb_temp, lima$mort_total, m_dlnm,
+                    type = "af", cen = mmt_emp,
+                    range = c(mmt_emp, max(lima$temp_med)))
+data.frame(componente = c("Total", "Frio", "Calor"),
+           AF_pct = round(100 * c(af_total, af_frio, af_calor), 2))
+```
+
+> En climas templados/tropicales con MMT alta se espera que la **AF del frio supere ampliamente la del calor**, aun cuando el calor genere efectos agudos mas visibles.
+
+### Ejercicio 5.1: DLNM para mortalidad cardiovascular
+
+1.  Construya un cross-basis identico para temperatura y ajuste un DLNM Poisson con `mort_cardio` como outcome.
+2.  Compare la curva acumulada con la de `mort_total`.
+3.  Cual es la diferencia mas importante entre ambas curvas?
+
+```{r ejercicio_5_1, eval=FALSE}
+# Tu codigo aqui
+m_dlnm_5.1 <- glm(mort_cardio ~ cb_temp + ns(tiempo, df = df_tiempo) +
+                dia_semana + feriado,
+              offset = log_pob,
+              data = lima, family = quasipoisson(link = "log"))
+
+phi_5.1 <- sum(residuals(m_dlnm_5.1, type = "pearson")^2) / df.residual(m_dlnm_5.1)
+
+phi_5.1
+```
+
+```         
+```
+
+# Bloque 4: DLNM para PM2.5
+
+Para PM2.5, las decisiones de diseno cambian:
+
+-   Lag maximo mas corto: 0-7 dias (literatura).
+-   Forma del predictor: usualmente lineal o casi lineal (sin umbral inferior: la OMS ha rebajado los umbrales sucesivamente).
+
+```{r dlnm_pm25}
+cb_pm <- crossbasis(
+  lima$pm25,
+  lag = 7,
+  argvar = list(fun = "lin"),       # PM2.5 lineal
+  arglag = list(fun = "ns", knots = logknots(7, 2))
+)
+
+m_pm <- glm(mort_total ~ cb_pm + cb_temp + ns(tiempo, df = df_tiempo) + dia_semana + feriado,
+            offset = log_pob,
+            data = lima, family = quasipoisson(link = "log"))
+
+# Prediccion: RR por incremento de 10 µg/m³ vs 0
+pred_pm <- crosspred(cb_pm, m_pm, at = c(0, 10), cen = 0)
+
+plot(pred_pm, "slices", var = 10,
+     xlab = "Lag (dias)", ylab = "RR por +10 µg/m³ PM2.5",
+     main = "Lag-respuesta de PM2.5 (mortalidad total)",
+     col = "darkgreen", lwd = 2)
+abline(h = 1, lty = 2)
+
+# RR acumulado lag 0-7 por +10 µg/m³
+data.frame(
+  RR_acum = round(pred_pm$allRRfit["10"], 4),
+  IC_inf  = round(pred_pm$allRRlow["10"], 4),
+  IC_sup  = round(pred_pm$allRRhigh["10"], 4)
+)
+```
+
+> **Atencion al ajuste mutuo:** este modelo incluye el cross-basis de temperatura como covariable. Eso evita que el efecto de PM2.5 se confunda con el efecto de temperatura (ambos tienen estacionalidad opuesta en Lima).
+
+### Ejercicio 5.2: Hospitalizaciones y PM2.5
+
+1.  Ajuste el DLNM analogo para `hosp_resp`.
+2.  Reporte el RR acumulado por incremento de 10 µg/m³.
+3.  Compare con el RR para `mort_resp`. ¿Tiene sentido la diferencia de magnitud?
+
+```{r ejercicio_5_2, eval=FALSE}
+# Tu codigo aqui
+```
+
+# Bloque 5: Ejercicio integrador
+
+Imagine que el Ministerio de Salud del Peru le solicita un breve informe sobre el impacto en salud de la temperatura y del PM2.5 en Lima Metropolitana, 2019-2023. Produzca:
+
+1.  Una tabla con los siguientes resultados, todos sobre `mort_total`:
+
+-   MMT estimada (°C).
+
+-   RR acumulado (lag 0-21) por frio extremo (P1 vs MMT).
+
+-   RR acumulado por calor extremo (P99 vs MMT).
+
+-   RR acumulado (lag 0-7) por +10 µg/m³ de PM2.5.
+
+2.  Tres figuras clave:
+
+-   Curva acumulada temperatura-mortalidad con MMT marcada.
+
+-   Curvas lag-respuesta para frio y calor.
+
+-   Curva lag-respuesta para PM2.5 (+10 µg/m³).
+
+3.  Un parrafo de discusion (max. 200 palabras) que mencione:
+
+-   Los principales hallazgos.
+
+-   Al menos una limitacion importante.
+
+-   Una recomendacion de politica publica concreta.
+
+# Cierre
+
+1.  Por que la **AF del frio** suele superar a la del calor en climas con MMT alta?
+2.  Si tuviera que **simplificar** el DLNM para una audiencia no tecnica, que visualizacion prefiriria: la superficie 3D, la curva acumulada o la tabla de RR? Por que?
+3.  Pensando en el conjunto del curso: en que momento elegiria una serie interrumpida vs. un GLM/DLNM?

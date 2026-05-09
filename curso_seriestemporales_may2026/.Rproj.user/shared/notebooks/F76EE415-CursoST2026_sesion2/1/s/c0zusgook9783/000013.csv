@@ -1,0 +1,5 @@
+"0","m0 <- glm(mort_total ~ temp_med + pm25,"
+"0","          offset = log_pob,"
+"0","          data = lima, family = poisson(link = ""log""))"
+"0",""
+"0","broom::tidy(m0, exponentiate = TRUE, conf.int = TRUE)"

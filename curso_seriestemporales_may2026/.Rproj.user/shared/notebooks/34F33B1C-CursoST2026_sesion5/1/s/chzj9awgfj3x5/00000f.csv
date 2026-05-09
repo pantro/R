@@ -1,0 +1,12 @@
+"0","# Identificar la MMT empirica con percentiles 1-99 (recortar colas)"
+"0","pred_temp <- crosspred(cb_temp, m_dlnm,"
+"0","                       cen = median(lima$temp_med),  # centro inicial provisional"
+"0","                       by = 0.1)"
+"0",""
+"0","# Buscar la temperatura con menor RR acumulado en lag 0-21"
+"0","mmt_emp <- pred_temp$predvar[which.min(pred_temp$allRRfit)]"
+"0","mmt_emp"
+"1","[1] 21.3
+"
+"0","# Recalcular pred centrando en la MMT empirica"
+"0","pred_temp <- crosspred(cb_temp, m_dlnm, cen = mmt_emp, by = 0.1)"

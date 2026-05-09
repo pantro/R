@@ -1,0 +1,5 @@
+"0",""
+"0","plot(pred_temp, ""slices"", var = v_caliente,"
+"0","     xlab = ""Lag (dias)"", ylab = ""RR"","
+"0","     main = paste0(""Calor extremo (P99 ≈ "", round(v_caliente, 1), "" °C)""),"
+"0","     col = ""firebrick"", lwd = 2)"

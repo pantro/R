@@ -1,0 +1,6 @@
+"0","m_lags <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado + temp_med + temp_l1 + temp_l2 + temp_l3 + pm25 + pm25_l1 + pm25_l2,"
+"0","              offset = log_pob,"
+"0","              data = lima, family = quasipoisson(link = ""log""))"
+"0",""
+"0","broom::tidy(m_lags, exponentiate = TRUE, conf.int = TRUE) |>"
+"0","  dplyr::filter(grepl(""^(temp|pm25)"", term))"

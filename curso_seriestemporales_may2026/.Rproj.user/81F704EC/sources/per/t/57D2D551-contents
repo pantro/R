@@ -1,0 +1,1158 @@
+# Guía docente — Respuestas a los ejercicios prácticos
+
+Curso de Series de Tiempo en Salud Ambiental · UPCH GeoHealth · Mayo 2026
+
+Este documento reúne, para cada ejercicio incluido en los `.qmd`, el
+código R ejecutable, los resultados esperados y los puntos de discusión
+clave para conducir la actividad en clase. Está pensado como referencia
+de la persona docente, no como material para entregar a las y los
+participantes.
+
+---
+
+# Sesión 1 — Fundamentos y exploración
+
+## Ejercicio 1.1 — La misma figura para cada exposición
+
+**Objetivo:** que las y los participantes generen las series de
+temperatura y PM2.5 con la misma estructura visual que la mortalidad y
+discutan la coincidencia temporal entre exposiciones y outcome.
+
+### Código
+
+```r
+library(ggplot2)
+
+g_temp <- ggplot(lima, aes(fecha, temp_med)) +
+  geom_line(linewidth = 0.3, colour = "grey40") +
+  geom_smooth(method = "loess", span = 0.1, se = FALSE, colour = "steelblue") +
+  labs(title = "Temperatura media diaria — Lima 2019-2023",
+       x = NULL, y = "°C")
+
+g_pm <- ggplot(lima, aes(fecha, pm25)) +
+  geom_line(linewidth = 0.3, colour = "grey40") +
+  geom_smooth(method = "loess", span = 0.1, se = FALSE, colour = "darkgreen") +
+  labs(title = "PM2.5 diaria — Lima 2019-2023",
+       x = NULL, y = "µg/m³")
+
+print(g_temp)
+print(g_pm)
+```
+
+### Resultados esperados
+
+- **Temperatura:** picos cada año ~enero-febrero (verano austral, ~24 °C),
+  valles ~julio-agosto (invierno, ~14-16 °C). Amplitud anual ~8-10 °C.
+- **PM2.5:** patrón **inverso**. Picos en julio-agosto (inversión
+  térmica, ~35 µg/m³), valles en enero-febrero (~13-15 µg/m³).
+
+### Puntos pedagógicos
+
+1.  El pico de **mortalidad** (julio-agosto) coincide con el pico de
+    **PM2.5** y el valle de **temperatura**. Tres series con la misma
+    estación.
+2.  Esa coincidencia temporal **no implica causalidad** — implica
+    confusión por estación. Hay que distinguir la pregunta visual
+    ("¿coinciden?") de la pregunta causal ("¿hay efecto independiente
+    de cada uno?").
+3.  Es el primer momento donde se introduce el concepto de **confusor
+    estacional** que dominará la sesión 2.
+
+> **Pregunta de cierre:** *si sólo viéramos estos tres gráficos, ¿podríamos
+> distinguir el efecto del frío del efecto del PM2.5? ¿Qué herramientas
+> estadísticas necesitaríamos?*
+
+---
+
+## Ejercicio 1.2 — Calendar heatmap de exposiciones
+
+**Objetivo:** confirmar visualmente la estacionalidad de cada exposición
+y discutir la covariación entre ellas.
+
+### Código
+
+```r
+# Heatmap de temperatura
+lima |>
+  mutate(mes_lbl = factor(month(fecha, label = TRUE, abbr = TRUE),
+                          levels = month.abb)) |>
+  ggplot(aes(x = day(fecha), y = mes_lbl, fill = temp_med)) +
+  geom_tile() +
+  facet_wrap(~ anio, ncol = 2) +
+  scale_y_discrete(limits = rev) +
+  scale_fill_viridis_c(option = "C", direction = -1,
+                       name = "Temp (°C)") +
+  labs(title = "Calendario de temperatura media diaria",
+       x = "Día del mes", y = NULL)
+
+# Heatmap de PM2.5
+lima |>
+  mutate(mes_lbl = factor(month(fecha, label = TRUE, abbr = TRUE),
+                          levels = month.abb)) |>
+  ggplot(aes(x = day(fecha), y = mes_lbl, fill = pm25)) +
+  geom_tile() +
+  facet_wrap(~ anio, ncol = 2) +
+  scale_y_discrete(limits = rev) +
+  scale_fill_viridis_c(option = "G",
+                       name = "PM2.5 (µg/m³)") +
+  labs(title = "Calendario de PM2.5 diaria",
+       x = "Día del mes", y = NULL)
+```
+
+### Resultados esperados
+
+- Los dos heatmaps son **espejos** uno del otro: donde la temperatura
+  muestra valores altos (verano), el PM2.5 está bajo, y viceversa.
+- Esto se traduce en una **correlación negativa** moderada-fuerte
+  (~ -0,6 en estos datos sintéticos).
+
+### Puntos pedagógicos
+
+1.  Los meses fríos (jul-ago) coinciden con alto PM2.5 — y también con
+    el pico de mortalidad respiratoria.
+2.  La correlación negativa entre exposiciones implica **multicolinealidad
+    estructural**: aun controlando estacionalidad quedará algo de
+    correlación día-a-día.
+3.  Esto adelanta el debate de la sesión 5: ¿cuándo conviene reportar
+    efectos mutuamente ajustados vs. modelos por separado?
+
+> **Pregunta de cierre:** *¿qué año "se ve distinto"? ¿hay alguna
+> anomalía visible? (En datos reales esto detecta brotes, pandemia,
+> huelgas que afectan registro).*
+
+---
+
+## Ejercicio 1.3 — Descomposición STL del PM2.5
+
+**Objetivo:** aplicar STL a una segunda serie y comparar la magnitud de
+los componentes con la mortalidad.
+
+### Código
+
+```r
+y_pm <- ts(lima$pm25, frequency = 365)
+desc_pm <- stl(y_pm, s.window = "periodic", robust = TRUE)
+plot(desc_pm, main = "Descomposición STL — PM2.5 diaria")
+
+# Magnitud relativa de los componentes
+componentes_pm <- desc_pm$time.series
+varianzas <- apply(componentes_pm, 2, var)
+round(varianzas / sum(varianzas) * 100, 1)
+# seasonal | trend | remainder  → % de varianza explicada por cada uno
+
+# Lo mismo para mortalidad, para comparar
+y_mort <- ts(lima$mort_total, frequency = 365)
+desc_mort <- stl(y_mort, s.window = "periodic", robust = TRUE)
+varianzas_mort <- apply(desc_mort$time.series, 2, var)
+round(varianzas_mort / sum(varianzas_mort) * 100, 1)
+```
+
+### Resultados esperados
+
+- **PM2.5:** componente estacional captura ~50-60 % de la varianza,
+  trend ~5-10 %, remainder ~30-40 %. La estacionalidad **domina**.
+- **Mortalidad:** la estacional captura algo menos (~30-40 %), porque
+  el ruido día-a-día (Poisson) es relativamente mayor.
+- En el panel *trend* del PM2.5, **2020 NO se ve distinto** — los datos
+  son sintéticos y no incluyeron caída por COVID.
+
+### Puntos pedagógicos
+
+1.  La **amplitud relativa** de la estacionalidad es mayor en PM2.5 que
+    en mortalidad. Eso confirma que el PM2.5 es una variable
+    *fuertemente estacional* y, por tanto, fuertemente confundida por
+    estación.
+2.  En datos reales, el panel *trend* del PM2.5 alrededor de 2020-2021
+    sí mostraría una caída por la cuarentena COVID (menos tráfico).
+    Mencionarlo permite discutir cómo ITS detectaría ese cambio.
+3.  El *remainder* todavía contiene **estructura** (ACF residual no es
+    cero) — STL no es un modelo, es un descriptor.
+
+---
+
+## Ejercicio 1.4 — ACF/PACF de hospitalizaciones respiratorias
+
+**Objetivo:** aplicar ACF/PACF a otra serie y comparar el ruido entre
+mortalidad y hospitalizaciones, y entre causas.
+
+### Código
+
+```r
+library(forecast)
+
+forecast::ggtsdisplay(lima$hosp_resp, lag.max = 60,
+                      main = "Hospitalizaciones respiratorias diarias")
+
+forecast::ggtsdisplay(lima$mort_resp, lag.max = 60,
+                      main = "Mortalidad respiratoria diaria")
+```
+
+### Resultados esperados
+
+- **Hospitalizaciones respiratorias** (~125/día): ACF claramente más
+  suave que mortalidad respiratoria. La estacionalidad es nítida; ACF
+  decae lento; PACF significativa hasta lag 5-10.
+- **Mortalidad respiratoria** (~25/día): mucho más ruidosa. ACF más
+  baja en magnitud porque el ruido Poisson domina con conteos bajos.
+
+### Puntos pedagógicos
+
+1.  Conteos **más altos = relación señal/ruido mejor** = ACF más
+    "limpia". Es un resultado básico de la varianza Poisson
+    ($\text{CV} = 1/\sqrt{\mu}$): a mayor media, menor coeficiente de
+    variación.
+2.  Esa diferencia tiene **implicaciones para la potencia** del modelo.
+    Detectar un mismo efecto relativo es más difícil con outcomes
+    raros.
+3.  Justifica analizar **all-cause + causa-específica** en paralelo:
+    all-cause da potencia, causa-específica da especificidad mecánica.
+
+> **Pregunta de cierre:** *¿esperarían que el efecto del PM2.5 fuera más
+> "fácil de estimar" en mortalidad respiratoria o en hospitalizaciones
+> respiratorias? ¿Por qué?*
+
+---
+
+# Sesión 2 — GLM Poisson y confusores temporales
+
+## Ejercicio 2.1 — Discusión guiada sobre M0/M1/M2
+
+**Objetivo:** que los participantes interpreten cómo cambia el efecto
+estimado al agregar confusores temporales, y argumenten qué modelo
+reportarían.
+
+### Resultados esperados (orden de magnitud)
+
+| Modelo | RR `temp_med` (por 1 °C) | RR `pm25` (por 1 µg/m³) |
+|--------|--------------------------|--------------------------|
+| M0 ingenuo                        | ~0,977 | ~1,006 |
+| M1 + spline tiempo                | ~0,995 a 1,005 (cerca de 1, *no significativo*) | ~1,001 a 1,002 |
+| M2 + DOW + feriado                | similar a M1 | similar a M1 |
+
+(Los valores exactos dependen del seed; en la base sintética de Lima
+están en estos rangos.)
+
+### Puntos pedagógicos
+
+1.  El RR de `temp_med` **se acerca a 1** al añadir el spline. Esto es
+    porque el efecto crudo del M0 era casi 100 % confusión por
+    estación: los inviernos fríos tienen alta mortalidad porque hay
+    mucha gente vulnerable enferma, no por la temperatura del día *per
+    se*. La temperatura como predictor lineal del **mismo día** no
+    captura el efecto (eso requiere lags y forma no lineal — sesiones
+    4 y 5).
+2.  El RR de `pm25` **baja sustancialmente**: de un implausible 6 % por
+    +10 µg/m³ a algo cercano a 1-2 %, mucho más alineado con la
+    literatura.
+3.  El paso M1→M2 cambia poco las exposiciones, pero permite identificar
+    el efecto **día de la semana** (lunes con más muertes) y feriado
+    (menos muertes registradas). Estos son confusores genuinos del
+    proceso administrativo.
+4.  **Mensaje clave para el alumnado:** *lo que un modelo "ingenuo" da
+    no es lo que los datos realmente dicen — es lo que dicen sin
+    controlar por la estructura temporal.*
+
+> **Cómo reportarían a una jefatura:** *"el efecto estimado del PM2.5
+> sobre mortalidad total en Lima, ajustando por tendencia, estación, día
+> de la semana y feriados, es de aproximadamente 1-2 % por cada 10 µg/m³
+> adicionales, con IC del 95 % entre X e Y. Sin ese ajuste el efecto
+> aparente es 5-6 veces mayor — esa diferencia es la cuantificación de la
+> confusión estacional."*
+
+---
+
+## Ejercicio 2.2 — Mortalidad cardiovascular
+
+**Objetivo:** repetir la cadena M0-M1-M2 con otro outcome y comparar
+sensibilidad al control de confusores.
+
+### Código
+
+```r
+library(broom)
+
+m0_c <- glm(mort_cardio ~ temp_med + pm25,
+            data = lima, family = quasipoisson(link = "log"))
+m1_c <- glm(mort_cardio ~ ns(tiempo, df = df_tiempo) + temp_med + pm25,
+            data = lima, family = quasipoisson(link = "log"))
+m2_c <- glm(mort_cardio ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+              temp_med + pm25,
+            data = lima, family = quasipoisson(link = "log"))
+
+extraer <- function(mod, nombre) {
+  broom::tidy(mod, exponentiate = TRUE, conf.int = TRUE) |>
+    dplyr::filter(term %in% c("temp_med","pm25")) |>
+    dplyr::transmute(modelo = nombre, term, RR = round(estimate, 4),
+                     IC_inf = round(conf.low, 4), IC_sup = round(conf.high, 4))
+}
+dplyr::bind_rows(extraer(m0_c, "M0"), extraer(m1_c, "M1"), extraer(m2_c, "M2"))
+
+# RR escalado
+data.frame(
+  Variable = c("Temp (+5°C)", "PM2.5 (+10 µg/m³)"),
+  RR_M0 = round(c(exp(5*coef(m0_c)["temp_med"]),  exp(10*coef(m0_c)["pm25"])), 3),
+  RR_M2 = round(c(exp(5*coef(m2_c)["temp_med"]),  exp(10*coef(m2_c)["pm25"])), 3)
+)
+```
+
+### Resultados esperados
+
+- En la base sintética, mortalidad cardio fue generada con `k_temp = 1.4`
+  y `k_pm = 1.2` — más sensible a temperatura y PM2.5 que all-cause.
+- En consecuencia, **la sensibilidad al control de confusores es menor
+  en términos relativos**: M0 sigue inflado, pero M2 retiene un efecto
+  más visible que en mortalidad total.
+
+### Puntos pedagógicos
+
+1.  Causas con **mayor sensibilidad biológica** muestran menos cambio
+    proporcional entre M0 y M2 — el efecto verdadero "compite" mejor
+    con la confusión estacional.
+2.  Eso justifica analizar **causas específicas** además de all-cause:
+    aporta especificidad mecánica y a veces **mayor potencia relativa**.
+3.  Hipótesis biológica para discutir: el frío induce vasoconstricción,
+    aumento de presión arterial y demanda miocárdica; el PM2.5 induce
+    inflamación sistémica y disfunción endotelial. Ambos mecanismos
+    plausibles para mortalidad cardiovascular aguda.
+
+---
+
+## Ejercicio 2.3 — Hospitalizaciones respiratorias y RR por 10 µg/m³
+
+**Objetivo:** estimar y comunicar el efecto del PM2.5 en una escala
+clínicamente interpretable.
+
+### Código
+
+```r
+m_hr <- glm(hosp_resp ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+              temp_med + pm25,
+            data = lima, family = quasipoisson(link = "log"))
+
+# RR por +10 µg/m³ con IC 95 %
+beta_pm <- coef(m_hr)["pm25"]
+se_pm   <- sqrt(vcov(m_hr)["pm25","pm25"])
+rr10    <- exp(10 * beta_pm)
+ic_lo   <- exp(10 * (beta_pm - 1.96 * se_pm))
+ic_hi   <- exp(10 * (beta_pm + 1.96 * se_pm))
+
+data.frame(
+  Outcome = "Hospitalizaciones respiratorias",
+  RR_por_10_PM = round(rr10, 3),
+  IC_inf = round(ic_lo, 3),
+  IC_sup = round(ic_hi, 3)
+)
+```
+
+### Resultados esperados
+
+- En la base sintética, hosp_resp tiene `k_pm = 1.7` (más sensible que
+  mort_resp). Espérese RR alrededor de 1,02-1,03 por +10 µg/m³ tras
+  ajuste por confusores temporales.
+- IC moderadamente estrechos por el alto número de eventos diarios
+  (~125/día).
+
+### Cómo comunicarlo (frase modelo)
+
+> *"En Lima Metropolitana, durante 2019-2023, cada incremento de
+> 10 µg/m³ en la concentración diaria de PM2.5 se asoció a un aumento
+> aproximado del 2-3 % en las hospitalizaciones respiratorias del mismo
+> día (IC 95 %: X-Y), después de ajustar por tendencia de largo plazo,
+> estación, día de la semana y feriados."*
+
+### Puntos pedagógicos
+
+1.  Reescalar a "+10 µg/m³" es **convencional en la literatura** y
+    facilita comparar con otros estudios. Reportar siempre por unidad
+    interpretable, no por unidad bruta.
+2.  Aclarar que el efecto es del **mismo día** (lag 0). El efecto
+    acumulado a varios lags suele ser mayor — vamos a estimarlo en
+    sesión 5.
+3.  El IC del 95 % es lo que un decisor mira; el p-valor es secundario.
+
+---
+
+## Ejercicio 2.4 — Sensibilidad al df del spline de tiempo
+
+**Objetivo:** mostrar empíricamente el trade-off entre sub- y
+sobre-ajuste estacional.
+
+### Código
+
+```r
+library(splines)
+
+n_anios <- as.numeric(diff(range(lima$fecha))) / 365.25
+
+resultados <- lapply(c(4, 7, 10, 14), function(df_anio) {
+  df_t <- round(df_anio * n_anios)
+  m <- glm(mort_total ~ ns(tiempo, df = df_t) + dia_semana + feriado +
+             temp_med + pm25,
+           data = lima, family = quasipoisson(link = "log"))
+  data.frame(
+    df_por_anio = df_anio,
+    df_total    = df_t,
+    RR_pm25     = round(exp(10 * coef(m)["pm25"]), 4),
+    IC_inf      = round(exp(10 * (coef(m)["pm25"] -
+                                  1.96 * sqrt(vcov(m)["pm25","pm25"]))), 4),
+    IC_sup      = round(exp(10 * (coef(m)["pm25"] +
+                                  1.96 * sqrt(vcov(m)["pm25","pm25"]))), 4)
+  )
+}) |> dplyr::bind_rows()
+
+resultados
+```
+
+### Resultados esperados
+
+- Con **4 df/año**: RR PM2.5 algo más alto (sub-ajuste estacional, parte
+  de la confusión queda).
+- Con **7-10 df/año**: estabilización del RR en valores similares (este
+  es el rango "correcto").
+- Con **14 df/año**: RR puede **bajar más de la cuenta** — sobre-ajuste
+  absorbe parte de la señal de PM2.5 que sí depende de variación
+  semi-estacional.
+
+### Puntos pedagógicos
+
+1.  **Pocos df:** queda confusión residual estacional → RR sesgado.
+2.  **Muchos df:** el spline absorbe variación legítima del predictor →
+    RR sub-estimado, IC más anchos.
+3.  La regla práctica de **7-10 df/año** (Bhaskaran 2013, Peng &
+    Dominici 2008) refleja un consenso empírico, no un teorema. **Es
+    obligatorio el análisis de sensibilidad** para mostrar que el
+    resultado es robusto a esta elección.
+4.  Si el RR cambia mucho entre 4 y 10 df/año, hay que reportar el
+    rango como parte de la incertidumbre.
+
+> **Pregunta para discutir:** *¿reportarían el resultado del modelo con
+> 8 df/año como "el resultado", o como "el resultado central" con un
+> rango de sensibilidad? La diferencia es ética, no técnica.*
+
+---
+
+# Sesión 3 — Series de tiempo interrumpidas
+
+## Ejercicio 3.1 — Cuantificar el efecto sobre PM2.5
+
+**Objetivo:** calcular la diferencia promedio entre observado y
+contrafactual, y discutir el efecto sostenido.
+
+### Código
+
+```r
+# Asumiendo que ya están: m_pm2 (modelo con seno/coseno) y its_pred
+post_period <- its_pred |> dplyr::filter(post == 1)
+
+dif_promedio <- mean(post_period$fitted_obs - post_period$fitted_cf)
+dif_relativa <- 100 * dif_promedio / mean(post_period$fitted_cf)
+
+data.frame(
+  Diferencia_absoluta_promedio = round(dif_promedio, 2),
+  Diferencia_relativa_pct      = round(dif_relativa, 1),
+  PM_promedio_observado_post   = round(mean(post_period$pm25_sem), 2),
+  PM_promedio_cf_post          = round(mean(post_period$fitted_cf), 2)
+)
+
+# Coeficiente del cambio de pendiente
+broom::tidy(m_pm2, conf.int = TRUE) |>
+  dplyr::filter(term == "tiempo_post")
+```
+
+### Resultados esperados
+
+- Diferencia absoluta promedio: **~ -7 a -8 µg/m³** post-intervención
+  vs. contrafactual.
+- Diferencia relativa: **~ -25 a -30 %** sobre lo esperado.
+- Coeficiente `tiempo_post`: significativo, negativo (~ -0,03
+  µg/m³/semana), consistente con efecto sostenido.
+
+### Puntos pedagógicos
+
+1.  El efecto se descompone en **nivel** (-6 µg/m³ inmediato) y
+    **pendiente** (-0,03/semana acumulativo). Reportar ambos.
+2.  La diferencia relativa (~30 %) es **enorme** comparada con
+    intervenciones reales en PM2.5 (típicamente 5-15 %). En clase,
+    discutir si ese es un efecto plausible.
+3.  Buen momento para introducir la **distinción entre eficacia
+    estadística y plausibilidad biológica/política**: una caída del 30 %
+    requiere un mecanismo muy potente.
+
+---
+
+## Ejercicio 3.2 — Ventana de transición
+
+**Objetivo:** examinar la sensibilidad del efecto al excluir las
+primeras semanas post-intervención.
+
+### Código
+
+```r
+library(lubridate)
+fecha_int <- as.Date("2021-07-05")
+
+its_sens <- its |>
+  mutate(excluir = (semana_inicio >= fecha_int) &
+                   (semana_inicio <  fecha_int + weeks(4))) |>
+  dplyr::filter(!excluir)
+
+m_hosp_sens <- glm(hosp_resp_sem ~ tiempo + post + tiempo_post + seno + coseno,
+                   data = its_sens, family = quasipoisson(link = "log"))
+
+# Comparar con el modelo original
+broom::tidy(m_hosp, exponentiate = TRUE, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("post","tiempo_post"))
+broom::tidy(m_hosp_sens, exponentiate = TRUE, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("post","tiempo_post"))
+```
+
+### Resultados esperados
+
+- `exp(post)` cambia poco (~5-10 % de variación). El efecto es robusto.
+- `exp(tiempo_post)` se mantiene también, porque la pendiente post se
+  identifica principalmente con las semanas más alejadas de la
+  intervención.
+
+### Puntos pedagógicos
+
+1.  La ventana de transición sirve para **separar "ruido inicial"** del
+    "efecto verdadero". Cambios estables son señal de robustez.
+2.  Si el efecto **cambia mucho** al excluir 4 semanas, es porque parte
+    del efecto observado era **transitorio o ruido inicial**, no efecto
+    sostenido. Eso debilita la inferencia causal.
+3.  La elección de 4 semanas es convencional para outcomes
+    semanales/mensuales. Para diarios suele usarse 14-28 días.
+
+---
+
+## Ejercicio 3.3 — Modelo cuadrático en la tendencia pre
+
+**Objetivo:** evaluar la sensibilidad del estimador a la forma de la
+tendencia previa.
+
+### Código
+
+```r
+m_pm_cuad <- lm(pm25_sem ~ tiempo + I(tiempo^2) + post + tiempo_post +
+                  seno + coseno, data = its)
+
+broom::tidy(m_pm_cuad, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("post", "tiempo_post"))
+
+# Comparar con el modelo lineal previo
+broom::tidy(m_pm2, conf.int = TRUE) |>
+  dplyr::filter(term %in% c("post", "tiempo_post"))
+```
+
+### Resultados esperados
+
+- En estos datos sintéticos la tendencia pre fue lineal por construcción.
+  Por tanto el coeficiente cuadrático será **pequeño y no significativo**,
+  y los coeficientes `post` y `tiempo_post` cambiarán **poco** respecto
+  al modelo lineal.
+- En datos reales, si la tendencia pre es no lineal, **el coeficiente de
+  `post` puede cambiar drásticamente** — es la principal amenaza al
+  diseño.
+
+### Puntos pedagógicos
+
+1.  La inferencia causal en ITS es **completamente dependiente de cómo
+    modelamos la tendencia pre-intervención**. Si la pre no es lineal y
+    asumimos que sí, atribuiremos el cambio natural de tendencia a la
+    intervención.
+2.  Recomendación práctica: **graficar la tendencia pre + ajuste lineal
+    + ajuste cuadrático** y discutir cuál parece más razonable
+    visualmente, antes de mirar el coeficiente `post`.
+3.  Lopez Bernal et al. (2018) recomiendan probar splines suaves en la
+    tendencia pre y comparar.
+
+---
+
+## Ejercicio 3.4 — Binomial negativa vs quasi-Poisson para hospitalizaciones
+
+**Objetivo:** comparar dos enfoques para sobredispersión.
+
+### Código
+
+```r
+library(MASS)
+
+m_hosp_qp <- glm(hosp_resp_sem ~ tiempo + post + tiempo_post + seno + coseno,
+                 data = its, family = quasipoisson(link = "log"))
+
+m_hosp_nb <- MASS::glm.nb(hosp_resp_sem ~ tiempo + post + tiempo_post +
+                            seno + coseno, data = its)
+
+# Coeficientes
+comparar <- function(mod, nombre) {
+  broom::tidy(mod, exponentiate = TRUE, conf.int = TRUE) |>
+    dplyr::filter(term %in% c("post","tiempo_post")) |>
+    dplyr::transmute(modelo = nombre, term, RR = round(estimate, 4),
+                     IC_inf = round(conf.low, 4), IC_sup = round(conf.high, 4))
+}
+dplyr::bind_rows(comparar(m_hosp_qp, "QuasiP"), comparar(m_hosp_nb, "NegBin"))
+
+# Parámetro de dispersión
+phi_qp <- summary(m_hosp_qp)$dispersion
+theta_nb <- summary(m_hosp_nb)$theta
+
+cat("Quasi-Poisson dispersion phi  =", round(phi_qp, 3), "\n",
+    "Negative binomial theta       =", round(theta_nb, 1), "\n")
+```
+
+### Resultados esperados
+
+- Coeficientes muy similares en magnitud.
+- IC ligeramente distintos: NB suele dar IC algo más anchos en colas
+  pesadas; QP los infla proporcionalmente a $\sqrt{\hat{\phi}}$.
+- $\hat{\phi}$ esperado ~1,1-1,3 (sobredispersión leve por la
+  estructura semanal sintética).
+
+### Puntos pedagógicos
+
+1.  **Quasi-Poisson:** asume varianza = $\phi \cdot \mu$. Inflación
+    proporcional. Más simple, sin parámetro extra.
+2.  **Binomial negativa:** asume varianza = $\mu + \mu^2/\theta$.
+    Inflación crece con la media. Más realista cuando la
+    sobredispersión es no constante.
+3.  Cuando $\theta$ de NB es **muy grande** (>20), las dos
+    aproximaciones convergen. Cuando es **chico** (<10), NB es
+    preferible.
+4.  En la práctica de epi ambiental, **quasi-Poisson sigue siendo el
+    estándar** porque es más interpretable y el comportamiento es
+    similar.
+
+---
+
+# Sesión 4 — GLM/GAM y efectos retardados
+
+## Ejercicio 4.1 — Sensibilidad a df / k
+
+**Objetivo:** mostrar cómo la posición de la MMT estimada y la forma de
+la curva dependen del df elegido.
+
+### Código
+
+```r
+library(splines)
+
+mmt_glm <- function(df_t, df_v) {
+  m <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+             ns(temp_med, df = df_v) + pm25,
+           data = lima, family = quasipoisson(link = "log"))
+  grid <- data.frame(
+    temp_med = seq(min(lima$temp_med), max(lima$temp_med), length.out = 200),
+    tiempo = median(lima$tiempo),
+    dia_semana = factor("lun", levels = levels(lima$dia_semana)),
+    feriado = 0,
+    pm25 = median(lima$pm25)
+  )
+  pr <- predict(m, newdata = grid)
+  grid$temp_med[which.min(pr)]
+}
+
+sapply(c(3, 4, 5, 7), mmt_glm)
+
+# Para GAM
+library(mgcv)
+mmt_gam <- function(k_v) {
+  m <- mgcv::gam(mort_total ~ s(tiempo, k = df_tiempo + 5) + dia_semana +
+                   feriado + s(temp_med, k = k_v) + pm25,
+                 data = lima, family = quasipoisson(link = "log"),
+                 method = "REML")
+  cat("k =", k_v, "→ edf =", round(summary(m)$s.table["s(temp_med)","edf"], 2), "\n")
+}
+sapply(c(4, 6, 10), mmt_gam)
+```
+
+### Resultados esperados
+
+- MMT estimada con `ns(df=3)`: posiblemente **más cercana a 22 °C** (la
+  curva más rígida tiende a un mínimo más limpio).
+- MMT estimada con `ns(df=7)`: la curva muestra ondulaciones
+  espurias; la MMT puede aparecer en posiciones inestables.
+- GAM con `k = 4`: edf bajo (~3), curva muy suavizada.
+- GAM con `k = 10`: edf alrededor de 4-6 (REML evita sobre-ajustar).
+
+### Puntos pedagógicos
+
+1.  **Splines paramétricos** (`ns()`): la **persona analista** elige la
+    flexibilidad. Bajo riesgo: poca o demasiada flexibilidad.
+2.  **GAM penalizado** (`mgcv::s()`): el algoritmo elige
+    automáticamente vía REML/GCV. Más robusto, pero a veces
+    *sobre-suaviza* relaciones genuinamente no lineales.
+3.  Mejor reportar **ambas** y mostrar que coinciden — robustez
+    metodológica.
+4.  La MMT siempre debe reportarse con su **incertidumbre** (no como
+    punto exacto).
+
+---
+
+## Ejercicio 4.2 — Mortalidad respiratoria con lag
+
+**Objetivo:** mostrar que el efecto frío es más marcado en respiratorias.
+
+### Código
+
+```r
+library(zoo)
+lima <- lima |>
+  arrange(fecha) |>
+  mutate(temp_ma_0_21 = rollmean(temp_med, k = 22, fill = NA, align = "right"),
+         pm25_ma_0_2  = rollmean(pm25,     k =  3, fill = NA, align = "right"))
+
+m_resp <- glm(mort_resp ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+                ns(temp_ma_0_21, df = 4) + pm25_ma_0_2,
+              data = lima, family = quasipoisson(link = "log"))
+
+# Predicciones
+grid <- data.frame(
+  temp_ma_0_21 = seq(min(lima$temp_ma_0_21, na.rm = TRUE),
+                     max(lima$temp_ma_0_21, na.rm = TRUE), length.out = 200),
+  tiempo = median(lima$tiempo),
+  dia_semana = factor("lun", levels = levels(lima$dia_semana)),
+  feriado = 0,
+  pm25_ma_0_2 = median(lima$pm25_ma_0_2, na.rm = TRUE)
+)
+pr   <- predict(m_resp, newdata = grid, se.fit = TRUE)
+prR  <- predict(m_resp, newdata = transform(grid, temp_ma_0_21 = 22), se.fit = TRUE)
+grid$RR    <- exp(pr$fit - prR$fit)
+grid$RR_lo <- exp(pr$fit - prR$fit - 1.96 * sqrt(pr$se.fit^2 + prR$se.fit^2))
+grid$RR_hi <- exp(pr$fit - prR$fit + 1.96 * sqrt(pr$se.fit^2 + prR$se.fit^2))
+
+# Comparar RR a 15 °C (frío) entre total y respiratorio
+rr_frio <- function(modelo, datos, var_temp, ref_t = 22) {
+  g <- data.frame(tiempo = median(datos$tiempo),
+                  dia_semana = factor("lun", levels = levels(datos$dia_semana)),
+                  feriado = 0,
+                  pm25_ma_0_2 = median(datos$pm25_ma_0_2, na.rm = TRUE))
+  g_15  <- transform(g, temp_ma_0_21 = 15)
+  g_ref <- transform(g, temp_ma_0_21 = ref_t)
+  exp(predict(modelo, newdata = g_15) - predict(modelo, newdata = g_ref))
+}
+
+m_total <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+                 ns(temp_ma_0_21, df = 4) + pm25_ma_0_2,
+               data = lima, family = quasipoisson(link = "log"))
+
+data.frame(Outcome = c("Total","Respiratoria"),
+           RR_15C_vs_22C = round(c(rr_frio(m_total, lima),
+                                   rr_frio(m_resp,  lima)), 3))
+```
+
+### Resultados esperados
+
+- RR a 15 °C vs 22 °C en **mortalidad total**: ~1,15-1,25 (15-25 %
+  más muertes).
+- RR a 15 °C vs 22 °C en **mortalidad respiratoria**: ~1,30-1,50
+  (30-50 % más). Claramente **más sensible al frío**.
+
+### Puntos pedagógicos
+
+1.  La causa **respiratoria** es más sensible al frío que el total —
+    consistente con la literatura (frío + virus respiratorios + EPOC).
+2.  El uso de `temp_ma_0_21` (promedio móvil 22 días) es la primera
+    aproximación a "lag prolongado": captura mejor el efecto frío.
+3.  La pendiente caliente sigue similar — el calor opera agudo y no
+    se beneficia del lag largo.
+
+---
+
+## Ejercicio 4.3 — Comparación GLM vs GAM
+
+**Objetivo:** ver que ambas técnicas convergen cuando el problema está
+bien especificado.
+
+### Código
+
+```r
+library(mgcv)
+
+m_glm <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+               ns(temp_ma_0_21, df = 4) + pm25_ma_0_2,
+             data = lima, family = quasipoisson(link = "log"))
+
+m_gam <- gam(mort_total ~ s(tiempo, k = df_tiempo + 5) + dia_semana + feriado +
+               s(temp_ma_0_21) + pm25_ma_0_2,
+             data = lima, family = quasipoisson(link = "log"), method = "REML")
+
+# Predicciones para comparar
+grid <- data.frame(
+  temp_ma_0_21 = seq(min(lima$temp_ma_0_21, na.rm = TRUE),
+                     max(lima$temp_ma_0_21, na.rm = TRUE), length.out = 200),
+  tiempo = median(lima$tiempo),
+  dia_semana = factor("lun", levels = levels(lima$dia_semana)),
+  feriado = 0,
+  pm25_ma_0_2 = median(lima$pm25_ma_0_2, na.rm = TRUE)
+)
+grid$pred_glm <- predict(m_glm, newdata = grid)
+grid$pred_gam <- predict(m_gam, newdata = grid)
+
+ref <- 22
+grid$RR_glm <- exp(grid$pred_glm - predict(m_glm,
+                                  newdata = transform(grid, temp_ma_0_21 = ref)))
+grid$RR_gam <- exp(grid$pred_gam - predict(m_gam,
+                                  newdata = transform(grid, temp_ma_0_21 = ref)))
+
+ggplot(grid, aes(temp_ma_0_21)) +
+  geom_line(aes(y = RR_glm), colour = "firebrick", linewidth = 1) +
+  geom_line(aes(y = RR_gam), colour = "navyblue", linewidth = 1, linetype = "dashed") +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  labs(title = "Comparación GLM (rojo) vs GAM (azul) — temperatura promedio 22 días",
+       x = "Temperatura promedio 22 días (°C)", y = "RR (ref 22 °C)")
+```
+
+### Resultados esperados
+
+- Las dos curvas son **casi idénticas** en el rango central (16-22 °C).
+- En los extremos pueden divergir levemente: GAM puede suavizar más, GLM
+  con `df = 4` puede tener pequeñas oscilaciones.
+
+### Puntos pedagógicos
+
+1.  Convergencia de los dos enfoques = **el resultado no es un artefacto
+    metodológico**. Es el tipo de robustez que vale la pena reportar.
+2.  GLM es **más fácil de comunicar** ("usamos un spline natural con 4
+    df"), GAM es **más difícil** ("usamos un spline penalizado con
+    REML"). Para audiencias clínicas, GLM es preferible.
+3.  GAM es **más útil para exploración**: el `summary()` reporta `edf`
+    que indica cuán curvada quedó realmente la función.
+
+---
+
+## Ejercicio 4.4 — ¿Y si la MMT no fuera 22 °C?
+
+**Objetivo:** estimar empíricamente la MMT y reflexionar sobre su
+incertidumbre.
+
+### Código
+
+```r
+# 1. Predicción del modelo GLM en una grilla densa
+grid <- data.frame(
+  temp_med = seq(min(lima$temp_med), max(lima$temp_med), length.out = 500),
+  tiempo = median(lima$tiempo),
+  dia_semana = factor("lun", levels = levels(lima$dia_semana)),
+  feriado = 0,
+  pm25 = median(lima$pm25)
+)
+m_ns <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana + feriado +
+              ns(temp_med, df = 4) + pm25,
+            data = lima, family = quasipoisson(link = "log"))
+grid$pred <- predict(m_ns, newdata = grid)
+
+# 2. MMT empírica del GLM
+mmt_glm <- grid$temp_med[which.min(grid$pred)]
+mmt_glm
+
+# 3. Lo mismo con GAM
+library(mgcv)
+m_gam <- gam(mort_total ~ s(tiempo, k = df_tiempo + 5) + dia_semana +
+               feriado + s(temp_med) + pm25,
+             data = lima, family = quasipoisson(link = "log"), method = "REML")
+grid$pred_gam <- predict(m_gam, newdata = grid)
+mmt_gam <- grid$temp_med[which.min(grid$pred_gam)]
+
+data.frame(modelo = c("GLM ns(df=4)", "GAM penalizado"),
+           MMT_empirica = round(c(mmt_glm, mmt_gam), 1))
+
+# 4. IC bootstrap (opcional, para alumnos avanzados)
+set.seed(42)
+n_boot <- 200
+mmt_boot <- replicate(n_boot, {
+  idx <- sample(nrow(lima), replace = TRUE)
+  m_b <- glm(mort_total ~ ns(tiempo, df = df_tiempo) + dia_semana +
+               feriado + ns(temp_med, df = 4) + pm25,
+             data = lima[idx, ], family = quasipoisson(link = "log"))
+  grid$temp_med[which.min(predict(m_b, newdata = grid))]
+})
+
+c(MMT_media   = round(mean(mmt_boot), 1),
+  IC95_inf    = round(quantile(mmt_boot, 0.025), 1),
+  IC95_sup    = round(quantile(mmt_boot, 0.975), 1))
+```
+
+### Resultados esperados
+
+- MMT empírica: **20-22 °C** (típicamente 21 °C en estos datos sintéticos).
+- IC 95 % por bootstrap: típicamente **±2 a ±3 °C** alrededor del punto
+  estimado.
+
+### Puntos pedagógicos
+
+1.  La MMT puntual es engañosamente precisa: el **IC bootstrap** suele
+    ser ancho. Reportar siempre con incertidumbre.
+2.  La MMT cambia entre modelos (GLM vs GAM) — eso es información:
+    indica cuán estable es el mínimo. En clima tropical/templado el
+    "valle" de la curva es a menudo plano, lo que hace la MMT difícil
+    de localizar.
+3.  En la sesión 5 vamos a estimar la MMT desde un DLNM (efecto
+    acumulado lag 0-21), que típicamente da una MMT más estable y bien
+    identificada.
+
+> **Mensaje clave:** *no confundir la MMT de referencia (la que
+> elegimos para reportar RR) con la MMT empírica (la que estima el
+> modelo). Son cosas distintas y deben reportarse explícitamente como
+> tales.*
+
+---
+
+# Sesión 5 — DLNM
+
+## Ejercicio 5.1 — DLNM para mortalidad cardiovascular
+
+**Objetivo:** aplicar el DLNM a otra causa y comparar la curva acumulada
+con mortalidad total.
+
+### Código
+
+```r
+library(dlnm)
+
+cb_temp <- crossbasis(
+  lima$temp_med,
+  lag = 21,
+  argvar = list(fun = "bs", degree = 2,
+                knots = quantile(lima$temp_med, c(0.10, 0.75, 0.90))),
+  arglag = list(fun = "ns", knots = logknots(21, 3))
+)
+
+m_cardio <- glm(mort_cardio ~ cb_temp + ns(tiempo, df = df_tiempo) +
+                  dia_semana + feriado,
+                data = lima, family = quasipoisson(link = "log"))
+
+# MMT empírica
+pred_c0 <- crosspred(cb_temp, m_cardio, cen = median(lima$temp_med), by = 0.1)
+mmt_c   <- pred_c0$predvar[which.min(pred_c0$allRRfit)]
+pred_c  <- crosspred(cb_temp, m_cardio, cen = mmt_c, by = 0.1)
+
+# Curva acumulada vs total (asumiendo m_dlnm/pred_temp ya cargados)
+par(mfrow = c(1, 2))
+plot(pred_temp, "overall", col = "firebrick", lwd = 2,
+     main = "Mortalidad TOTAL", xlab = "T (°C)", ylab = "RR acumulado")
+abline(v = mmt_emp, lty = 2)
+plot(pred_c,   "overall", col = "darkorange", lwd = 2,
+     main = "Mortalidad CARDIO", xlab = "T (°C)", ylab = "RR acumulado")
+abline(v = mmt_c, lty = 2)
+par(mfrow = c(1, 1))
+
+# RR a percentiles extremos
+p1 <- quantile(lima$temp_med, 0.01); p99 <- quantile(lima$temp_med, 0.99)
+idx_cercano <- function(p, v) which.min(abs(p$predvar - v))
+
+data.frame(
+  Outcome = c("Total","Cardio"),
+  RR_frio_P1 = round(c(pred_temp$allRRfit[idx_cercano(pred_temp, p1)],
+                       pred_c$allRRfit[idx_cercano(pred_c, p1)]), 2),
+  RR_calor_P99 = round(c(pred_temp$allRRfit[idx_cercano(pred_temp, p99)],
+                         pred_c$allRRfit[idx_cercano(pred_c, p99)]), 2)
+)
+```
+
+### Resultados esperados
+
+- MMT cardio: similar a total (~21-22 °C).
+- RR de frío (P1 vs MMT): **mayor en cardio** que en total
+  (~1,40 vs ~1,25, dependiendo del seed).
+- Pendiente fría más empinada en cardio = **mayor sensibilidad
+  cardiovascular al frío**, hallazgo consistente con literatura
+  (vasoconstricción, hipertensión inducida, descompensación cardiaca).
+
+### Puntos pedagógicos
+
+1.  La causa cardio es **biológicamente más sensible** al frío y al
+    PM2.5 que el total — consistente con el conocimiento clínico.
+2.  La curva acumulada captura el efecto **integrado a lo largo de 21
+    días**, no sólo del mismo día. Por eso el efecto frío se ve **mayor
+    aquí que en sesión 4**.
+3.  Discusión: ¿por qué la causa cardio es tan sensible? Posibles
+    mecanismos: vasoconstricción, hemoconcentración, inflamación
+    sistémica, infección respiratoria que precipita un evento
+    cardíaco.
+
+---
+
+## Ejercicio 5.2 — Hospitalizaciones respiratorias y PM2.5
+
+**Objetivo:** estimar el efecto acumulado del PM2.5 sobre
+hospitalizaciones respiratorias y comparar con mortalidad.
+
+### Código
+
+```r
+cb_pm <- crossbasis(lima$pm25, lag = 7,
+                    argvar = list(fun = "lin"),
+                    arglag = list(fun = "ns", knots = logknots(7, 2)))
+
+# Modelos en paralelo: hosp_resp y mort_resp
+m_hr <- glm(hosp_resp ~ cb_pm + cb_temp + ns(tiempo, df = df_tiempo) +
+              dia_semana + feriado,
+            data = lima, family = quasipoisson(link = "log"))
+
+m_mr <- glm(mort_resp ~ cb_pm + cb_temp + ns(tiempo, df = df_tiempo) +
+              dia_semana + feriado,
+            data = lima, family = quasipoisson(link = "log"))
+
+pred_hr <- crosspred(cb_pm, m_hr, at = c(0, 10), cen = 0)
+pred_mr <- crosspred(cb_pm, m_mr, at = c(0, 10), cen = 0)
+
+data.frame(
+  Outcome = c("Hosp respiratorias", "Mort respiratoria"),
+  RR_acum_lag07_por_10ugm3 = round(c(pred_hr$allRRfit["10"],
+                                     pred_mr$allRRfit["10"]), 3),
+  IC_inf = round(c(pred_hr$allRRlow["10"], pred_mr$allRRlow["10"]), 3),
+  IC_sup = round(c(pred_hr$allRRhigh["10"], pred_mr$allRRhigh["10"]), 3)
+)
+```
+
+### Resultados esperados
+
+- Hospitalizaciones: RR ≈ 1,02-1,03 por +10 µg/m³ (lag 0-7
+  acumulado).
+- Mortalidad respiratoria: RR ≈ 1,01-1,02 por +10 µg/m³.
+- IC más estrechos en hospitalizaciones (mayor número de eventos).
+
+### Puntos pedagógicos
+
+1.  Las hospitalizaciones suelen mostrar RR **algo mayor** porque captan
+    eventos menos severos pero más frecuentes; mortalidad capta sólo
+    los más graves.
+2.  El cociente hospitalizaciones/mortalidad es ~5:1 en estos datos,
+    lo que da más potencia estadística a hospitalizaciones.
+3.  Discusión: si una política reduce 1 µg/m³ de PM2.5, ¿cuántas
+    hospitalizaciones se evitan al año en Lima? (Cálculo aproximado:
+    365 días × 125 hosp/día × 1 % × 0,1 ≈ ~46 hosp/año por cada 1 µg/m³
+    de reducción sostenida.)
+
+---
+
+## Ejercicio 5.3 — Ejercicio integrador
+
+**Objetivo:** producir un mini-informe técnico sintetizando todo el
+curso. Esta es la actividad evaluativa principal.
+
+### Código de referencia para la tabla
+
+```r
+# (1) MMT empírica
+mmt_emp <- pred_temp$predvar[which.min(pred_temp$allRRfit)]
+
+# (2) RR frío P1 vs MMT (lag 0-21)
+p1  <- quantile(lima$temp_med, 0.01)
+p99 <- quantile(lima$temp_med, 0.99)
+idx <- function(p, v) which.min(abs(p$predvar - v))
+
+# (3) Tabla resumen
+tabla_final <- data.frame(
+  Indicador = c("MMT empírica (°C)",
+                "RR acumulado lag 0-21 — frío extremo (P1 vs MMT)",
+                "RR acumulado lag 0-21 — calor extremo (P99 vs MMT)",
+                "RR acumulado lag 0-7 — PM2.5 (+10 µg/m³)"),
+  Estimacion = c(round(mmt_emp, 1),
+                 round(pred_temp$allRRfit[idx(pred_temp, p1)],  3),
+                 round(pred_temp$allRRfit[idx(pred_temp, p99)], 3),
+                 round(pred_pm$allRRfit["10"], 3)),
+  IC95_inf = c(NA,
+               round(pred_temp$allRRlow[idx(pred_temp, p1)], 3),
+               round(pred_temp$allRRlow[idx(pred_temp, p99)], 3),
+               round(pred_pm$allRRlow["10"], 3)),
+  IC95_sup = c(NA,
+               round(pred_temp$allRRhigh[idx(pred_temp, p1)], 3),
+               round(pred_temp$allRRhigh[idx(pred_temp, p99)], 3),
+               round(pred_pm$allRRhigh["10"], 3))
+)
+knitr::kable(tabla_final)
+```
+
+### Resultados esperados (orden de magnitud)
+
+| Indicador | Esperado |
+|-----------|----------|
+| MMT empírica | 21-22 °C |
+| RR frío extremo (P1 vs MMT) | 1,30-1,55 |
+| RR calor extremo (P99 vs MMT) | 1,10-1,25 |
+| RR PM2.5 (+10 µg/m³, lag 0-7) | 1,02-1,04 |
+
+### Párrafo modelo de discusión
+
+> *"El análisis de series de tiempo en Lima Metropolitana 2019-2023
+> identifica una relación en U/J entre temperatura y mortalidad total,
+> con un mínimo en torno a los 21-22 °C. La carga del frío (RR ≈ 1,4
+> a P1 vs MMT, acumulado a 21 días) supera ampliamente la del calor
+> (RR ≈ 1,15 a P99), patrón consistente con la literatura
+> latinoamericana y con los hallazgos del estudio multipaís de
+> Gasparrini et al. (Lancet 2015). Para PM2.5 se estima un incremento
+> del 2-3 % en mortalidad por cada 10 µg/m³ adicionales (lag 0-7).*
+>
+> *Las principales limitaciones a discutir en un análisis real serían:
+> (i) datos sintéticos; en datos reales, sub-registro estacional de
+> defunciones, calidad de monitores de PM2.5 y representatividad
+> espacial; (ii) ausencia de datos individuales (edad, comorbilidad)
+> que limitarían el análisis a efectos poblacionales; (iii) confusión
+> residual por otros contaminantes (NO2, O3) no medidos; (iv) el
+> efecto del frío estimado puede contener algo de "harvesting" no
+> separable sin lags más largos.*
+>
+> *Recomendación de política pública: dado que la mayor carga atribuible
+> proviene del frío y de la exposición continua a PM2.5, las
+> intervenciones más efectivas combinarían (a) sistemas de alerta
+> temprana de bajas temperaturas para grupos vulnerables (adultos
+> mayores, pacientes con EPOC), (b) programas de mejoramiento térmico
+> de viviendas en zonas de mayor altitud y exposición al frío
+> nocturno, y (c) reducción sostenida de PM2.5 mediante restricción
+> vehicular y modernización del transporte público."*
+
+### Puntos pedagógicos para el cierre del curso
+
+1.  Este ejercicio sintetiza **todas las decisiones técnicas** del curso:
+    spline temporal, control de DOW, cross-basis no lineal, lag
+    distribuido, MMT empírica, comparación de exposiciones.
+2.  **Evaluar:** la calidad del informe está dada por (i) decisiones
+    metodológicas explícitas y justificadas, (ii) interpretación
+    correcta en escala interpretable (RR vs MMT, RR por +10 µg/m³),
+    (iii) honestidad sobre limitaciones, (iv) recomendaciones que
+    surgen de los hallazgos (no de creencias previas).
+3.  **Discutir cómo este análisis se traduce en acción:** ningún
+    estudio de series de tiempo "demuestra" causalidad por sí solo,
+    pero **acumulado en una base de evidencia internacional** sí lo
+    hace. Lima tiene poco trabajo publicado sobre este tema — los
+    alumnos podrían ser quienes lo generen.
+
+---
+
+# Notas finales para la persona docente
+
+## Tiempos sugeridos por tipo de ejercicio
+
+- **Ejercicios de repetición** (hacer lo mismo con otra variable):
+  10-15 minutos individual + 10 minutos discusión grupal.
+- **Ejercicios de comparación** (M0 vs M2; GLM vs GAM): 15-20 minutos
+  + 15 minutos discusión.
+- **Ejercicios de sensibilidad** (df, ventana de transición, MMT):
+  15 minutos + 15 minutos discusión — son los más densos
+  conceptualmente.
+- **Ejercicio integrador 5.3:** trabajo en parejas, 90 minutos +
+  presentación oral de 5 minutos por pareja con discusión grupal.
+
+## Patrones a observar en el aula
+
+- **"Mi RR salió diferente":** casi siempre porque el alumno usó
+  `glm()` Poisson en vez de `quasipoisson`, o no incluyó el spline de
+  tiempo, o usó df distinto. Revisar paso a paso.
+- **"No me converge":** verificar que `df_tiempo` esté definido,
+  que no haya NAs en variables del modelo, que las fechas estén
+  parseadas.
+- **"El IC me sale enorme":** suele ser por incluir muchas
+  exposiciones colineales (varios lags, temp + temp_lag, etc.)
+  sin DLNM. Buen momento para volver a la motivación del DLNM.
+
+## Lecturas complementarias por sesión
+
+- **Sesión 1:** Hyndman & Athanasopoulos (2021) *Forecasting:
+  Principles and Practice*, cap. 2-3 (gratis online).
+- **Sesión 2:** Bhaskaran et al. (2013) IJE — referencia obligatoria.
+- **Sesión 3:** Bernal, Cummins, Gasparrini (2017) IJE — el tutorial
+  de ITS.
+- **Sesión 4:** Wood (2017) *GAM with R* — texto clásico.
+- **Sesión 5:** Gasparrini (2011) *J Stat Software* y Gasparrini
+  Lancet 2015.
